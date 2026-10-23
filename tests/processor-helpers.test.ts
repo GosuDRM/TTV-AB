@@ -5798,6 +5798,54 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		return info;
 	}
 
+	it("logs an unavailable hold backup once per ad break", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			IsShowingAd: false,
+			IsHoldingBackupAfterAd: true,
+			LastCleanBackupAt: Date.now() - 5000,
+		});
+		info.Urls = Object.assign(Object.create(null), {
+			[NATIVE_URL]: { Resolution: "1920x1080", Codecs: "avc1.64002a" },
+		});
+		const previous = {
+			log: g._log,
+			refresh: g._refreshActiveBackupMediaPlaylist,
+			find: g._findBackupStream,
+			notify: g._notifyAdComplete,
+			record: g._recordAdDurations,
+		};
+		const logs: string[] = [];
+		g._log = (message: string) => logs.push(message);
+		g._refreshActiveBackupMediaPlaylist = async () => null;
+		g._findBackupStream = async () => ({ type: null, m3u8: null });
+		g._notifyAdComplete = () => Promise.resolve();
+		g._recordAdDurations = () => {};
+		const adPlaylist = makePlaylist(100, 3).replace(
+			"#EXTINF",
+			'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",START-DATE="2024-01-01T00:00:00Z"\n#EXTINF',
+		);
+		try {
+			for (let poll = 0; poll < 3; poll++) {
+				await processM3U8()(NATIVE_URL, adPlaylist, () =>
+					Promise.reject(new Error("unexpected fetch")),
+				);
+			}
+		} finally {
+			g._log = previous.log;
+			g._refreshActiveBackupMediaPlaylist = previous.refresh;
+			g._findBackupStream = previous.find;
+			g._notifyAdComplete = previous.notify;
+			g._recordAdDurations = previous.record;
+		}
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(
+			logs.filter((message) =>
+				message.includes("Fresh backup unavailable during silent hold"),
+			),
+		).toHaveLength(1);
+	});
+
 	it("keeps the held backup playing without a reload when ending into a silent backup hold", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			ConsecutiveFailedNativeProbes: 6,
