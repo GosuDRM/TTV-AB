@@ -122,10 +122,6 @@ function getMessageData(value) {
 	return isPlainObject(value) ? value : null;
 }
 
-function getMessageDetail(value) {
-	return isPlainObject(value) ? value : null;
-}
-
 function createChannelsMap(): TTVABChannelMap {
 	return Object.create(null);
 }
@@ -139,6 +135,7 @@ function createDailyStatsMap(): TTVABDailyStatsMap {
 }
 
 const MAX_WATCH_DELTA_SECONDS = 7200;
+const MAX_ADS_DELTA_PER_FLUSH = 1000;
 const MAX_AD_MILLISECONDS_PER_FLUSH = 14400000;
 const MAX_AD_MEASUREMENTS_PER_FLUSH = 50;
 const MAX_RECENT_AD_MEASUREMENTS = 1000;
@@ -512,7 +509,7 @@ function normalizeAdMeasurementId(value) {
 }
 
 function normalizeAdMeasurement(value) {
-	const safeValue = getMessageDetail(value);
+	const safeValue = getMessageData(value);
 	const id = normalizeAdMeasurementId(safeValue?.id);
 	const durationMilliseconds = Math.min(
 		normalizeCount(safeValue?.durationMilliseconds),
@@ -537,10 +534,9 @@ function normalizeAdMeasurement(value) {
 }
 
 function getAdMeasurementKey(measurement) {
-	const safeMeasurement = normalizeAdMeasurement(measurement);
-	return safeMeasurement
-		? `${safeMeasurement.mediaKey}\n${safeMeasurement.id}\n${normalizeCount(
-				safeMeasurement.startDateMilliseconds,
+	return measurement
+		? `${measurement.mediaKey}\n${measurement.id}\n${normalizeCount(
+				measurement.startDateMilliseconds,
 			)}`
 		: null;
 }
@@ -733,9 +729,12 @@ function applyAchievementUnlocks(stats, totalAdsBlocked) {
 
 async function persistCounterDelta(detail, sourceTabId = null) {
 	const persistRevision = turboModeRevision;
-	const safeDetail = getMessageDetail(detail);
+	const safeDetail = getMessageData(detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
-	const adsDelta = normalizeCount(safeDetail?.adsDelta);
+	const adsDelta = Math.min(
+		normalizeCount(safeDetail?.adsDelta),
+		MAX_ADS_DELTA_PER_FLUSH,
+	);
 	const channelDeltas =
 		adsDelta > 0
 			? normalizeChannelDeltaMap(safeDetail?.channelDeltas, adsDelta)
@@ -781,7 +780,10 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 	);
 	for (const channel of Object.keys(watchDeltas)) {
 		const intervals = safeDetail?.watchIntervals?.[channel];
-		if (!Array.isArray(intervals)) continue;
+		if (!Array.isArray(intervals)) {
+			if (createdAt > 0 && createdAt < watchSinceAt) watchDeltas[channel] = 0;
+			continue;
+		}
 		let milliseconds = 0;
 		let previousEnd = watchSinceAt;
 		const sorted = intervals
@@ -859,12 +861,6 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 			recentAdMeasurements[measurementKey] = now;
 			continue;
 		}
-		if (
-			adMillisecondsDelta + measurement.durationMilliseconds >
-			MAX_AD_MILLISECONDS_PER_FLUSH
-		) {
-			continue;
-		}
 		recentAdMeasurements[measurementKey] = now;
 		adMillisecondsDelta += measurement.durationMilliseconds;
 		measuredAdsDelta++;
@@ -933,7 +929,7 @@ async function resetStatistics() {
 }
 
 async function confirmCounterFlush(detail) {
-	const safeDetail = getMessageDetail(detail);
+	const safeDetail = getMessageData(detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
 	if (!flushId) return { ok: false, error: "invalid flush id" };
 
@@ -962,9 +958,9 @@ async function confirmCounterFlush(detail) {
 	return { ok: true };
 }
 
-function enqueuePersist(task, key = null) {
+function enqueuePersist(task, key = null, bypassCapacity = false) {
 	if (
-		pendingPersistTaskCount >= MAX_PENDING_PERSIST_TASKS ||
+		(!bypassCapacity && pendingPersistTaskCount >= MAX_PENDING_PERSIST_TASKS) ||
 		(key && pendingPersistKeys.has(key))
 	) {
 		return Promise.resolve({ ok: false, error: "Counter persistence busy" });
@@ -1013,7 +1009,7 @@ function getPreviewFailureDiagnosticSender(sender) {
 
 function forwardPreviewFailureDiagnostic(detail, sender) {
 	const source = getPreviewFailureDiagnosticSender(sender);
-	const safeDetail = getMessageDetail(detail);
+	const safeDetail = getMessageData(detail);
 	if (
 		!source ||
 		!safeDetail ||
@@ -1046,6 +1042,7 @@ function forwardPreviewFailureDiagnostic(detail, sender) {
 
 const DIAGNOSTIC_CHECKPOINT_STORAGE_KEY = "ttvDiagnosticCheckpoints";
 const DIAGNOSTIC_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
+const DIAGNOSTIC_STORE_RESPONSE_TIMEOUT_MS = 2000;
 let diagnosticStoreWork = Promise.resolve();
 let pendingDiagnosticStoreWork = 0;
 
@@ -1071,13 +1068,8 @@ function diagnosticPageUrl(value) {
 
 function accessDiagnosticSession(method, value): Promise<PlainObject> {
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(new Error("Diagnostic storage timeout")),
-			2000,
-		);
 		try {
 			chrome.storage.session[method](value, (result) => {
-				clearTimeout(timer);
 				if (chrome.runtime.lastError) {
 					reject(new Error(chrome.runtime.lastError.message));
 				} else {
@@ -1085,7 +1077,6 @@ function accessDiagnosticSession(method, value): Promise<PlainObject> {
 				}
 			});
 		} catch (error) {
-			clearTimeout(timer);
 			reject(error);
 		}
 	});
@@ -1105,7 +1096,7 @@ function queueDiagnosticStoreWork(
 			);
 			const records: Record<string, DiagnosticCheckpointRecord> =
 				Object.create(null);
-			const rawRecords = getMessageDetail(
+			const rawRecords = getMessageData(
 				stored[DIAGNOSTIC_CHECKPOINT_STORAGE_KEY],
 			);
 			const now = Date.now();
@@ -1144,14 +1135,23 @@ function queueDiagnosticStoreWork(
 			pendingDiagnosticStoreWork -= 1;
 		});
 	diagnosticStoreWork = work.then(() => {});
-	return work;
+	return new Promise((resolve) => {
+		const timer = setTimeout(
+			() => resolve(null),
+			DIAGNOSTIC_STORE_RESPONSE_TIMEOUT_MS,
+		);
+		void work.then((result) => {
+			clearTimeout(timer);
+			resolve(result);
+		});
+	});
 }
 
 function retainDiagnosticCheckpoint(detail, sender) {
 	const tabId = sender?.tab?.id;
 	const pageUrl = diagnosticPageUrl(sender?.url);
 	const capturedAt = detail?.capturedAt;
-	const context = getMessageDetail(detail?.context);
+	const context = getMessageData(detail?.context);
 	if (
 		sender?.frameId !== 0 ||
 		!Number.isInteger(tabId) ||
@@ -1185,10 +1185,6 @@ function clearDiagnosticCheckpoint(tabId) {
 }
 
 chrome.tabs?.onRemoved?.addListener(clearDiagnosticCheckpoint);
-chrome.tabs?.onUpdated?.addListener((tabId, change) => {
-	if (change.status === "loading" || change.url)
-		clearDiagnosticCheckpoint(tabId);
-});
 
 function isPopupPageSender(sender) {
 	return (
@@ -1211,23 +1207,27 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	}
 	if (message?.type === "ttvab-reset-statistics") {
 		if (!isPopupPageSender(sender)) return undefined;
-		enqueuePersist(async () => {
-			try {
-				return await resetStatistics();
-			} catch (error) {
-				return {
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				};
-			}
-		}, message.type).then(sendResponse);
+		enqueuePersist(
+			async () => {
+				try {
+					return await resetStatistics();
+				} catch (error) {
+					return {
+						ok: false,
+						error: error instanceof Error ? error.message : String(error),
+					};
+				}
+			},
+			message.type,
+			true,
+		).then(sendResponse);
 		return true;
 	}
 	if (
 		message?.type === "ttvab-get-diagnostic-checkpoint" &&
 		isPopupPageSender(sender)
 	) {
-		const detail = getMessageDetail(message.detail);
+		const detail = getMessageData(message.detail);
 		const tabId = detail?.tabId;
 		const pageUrl = diagnosticPageUrl(detail?.pageUrl);
 		if (typeof tabId !== "number" || !Number.isInteger(tabId) || !pageUrl)
@@ -1251,7 +1251,7 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 
-	const flushId = normalizeFlushId(getMessageDetail(message.detail)?.flushId);
+	const flushId = normalizeFlushId(getMessageData(message.detail)?.flushId);
 	const persistRevision = turboModeRevision;
 	enqueuePersist(
 		async () => {
@@ -1326,6 +1326,7 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 chrome.runtime.onInstalled.addListener((details) => {
 	if (details.reason === "install") void migratePlaybackDefaults(true);
 });
+chrome.runtime.onStartup?.addListener(() => refreshBadgeFromStorage());
 
 void migratePlaybackDefaults();
 refreshBadgeFromStorage();
