@@ -218,7 +218,7 @@ const _PinnedBackupStallState = {
 };
 const _InAdFreezeState = {
 	mediaKey: null as string | null,
-	video: null as HTMLMediaElement | null,
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
 	firstFrozenAt: 0,
 	lastCurrentTime: -1,
 	lastActionAt: 0,
@@ -232,7 +232,7 @@ const _HiddenCleanLiveStallState = {
 	lastActionAt: 0,
 };
 const _FatalAdMediaRecoveryState = {
-	video: null as HTMLMediaElement | null,
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
 	mediaKey: null as string | null,
 	recoveryId: null as string | null,
 	recoveryKind: null as "media-error" | "unready" | null,
@@ -244,7 +244,7 @@ const _FatalAdMediaRecoveryState = {
 };
 function _resetInAdFreezeState(mediaKey = null) {
 	_InAdFreezeState.mediaKey = _normalizeMediaKey(mediaKey);
-	_InAdFreezeState.video = null;
+	_InAdFreezeState.videoRef = null;
 	_InAdFreezeState.firstFrozenAt = 0;
 	_InAdFreezeState.lastCurrentTime = -1;
 	_InAdFreezeState.lastActionAt = 0;
@@ -261,7 +261,7 @@ function _resetFatalAdMediaRecoveryState(recoveryId = null) {
 	if (recoveryId && _FatalAdMediaRecoveryState.recoveryId !== recoveryId) {
 		return false;
 	}
-	_FatalAdMediaRecoveryState.video = null;
+	_FatalAdMediaRecoveryState.videoRef = null;
 	_FatalAdMediaRecoveryState.mediaKey = null;
 	_FatalAdMediaRecoveryState.recoveryId = null;
 	_FatalAdMediaRecoveryState.recoveryKind = null;
@@ -352,7 +352,7 @@ function _checkFatalAdMediaRecovery(player) {
 		? __TTVAB_STATE__.PinnedBackupPlayerType
 		: null;
 	const observationMatches = Boolean(
-		_FatalAdMediaRecoveryState.video === video &&
+		_FatalAdMediaRecoveryState.videoRef?.deref() === video &&
 			_FatalAdMediaRecoveryState.mediaKey === pageMediaKey &&
 			_FatalAdMediaRecoveryState.cycleStartedAt === cycleStartedAt &&
 			_FatalAdMediaRecoveryState.recoveryKind === recoveryKind &&
@@ -361,7 +361,7 @@ function _checkFatalAdMediaRecovery(player) {
 	);
 	if (!observationMatches) {
 		_resetFatalAdMediaRecoveryState();
-		_FatalAdMediaRecoveryState.video = video;
+		_FatalAdMediaRecoveryState.videoRef = new WeakRef(video);
 		_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
 		_FatalAdMediaRecoveryState.recoveryKind = recoveryKind;
 		_FatalAdMediaRecoveryState.pinnedType = pinnedType;
@@ -388,7 +388,7 @@ function _checkFatalAdMediaRecovery(player) {
 	if (_getCodecHandoffCycleStartedAt(recoveryId) !== cycleStartedAt) {
 		return false;
 	}
-	_FatalAdMediaRecoveryState.video = video;
+	_FatalAdMediaRecoveryState.videoRef = new WeakRef(video);
 	_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
 	_FatalAdMediaRecoveryState.recoveryId = recoveryId;
 	_FatalAdMediaRecoveryState.recoveryKind = recoveryKind;
@@ -467,7 +467,7 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		eventCycleStartedAt !== _FatalAdMediaRecoveryState.cycleStartedAt ||
 		_getCodecHandoffCycleStartedAt(recoveryId) !== eventCycleStartedAt ||
 		!_isCodecHandoffCycleCurrent(mediaKey, eventCycleStartedAt) ||
-		video !== _FatalAdMediaRecoveryState.video ||
+		video !== (_FatalAdMediaRecoveryState.videoRef?.deref() || null) ||
 		!recoveryConditionStillActive
 	) {
 		if (mediaKey === _FatalAdMediaRecoveryState.mediaKey) {
@@ -6987,12 +6987,12 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 	}
 	const currentTime = Number(video.currentTime) || 0;
 	if (
-		_InAdFreezeState.video !== video ||
+		_InAdFreezeState.videoRef?.deref() !== video ||
 		(_InAdFreezeState.lastCurrentTime >= 0 &&
 			currentTime < _InAdFreezeState.lastCurrentTime - 0.25)
 	) {
 		_resetInAdFreezeState(safeMediaKey);
-		_InAdFreezeState.video = video;
+		_InAdFreezeState.videoRef = new WeakRef(video);
 	}
 	const bufferedEnd =
 		video.buffered && video.buffered.length > 0
@@ -7004,7 +7004,7 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		currentTime > _InAdFreezeState.lastCurrentTime + 0.25;
 	if (!playbackHasStarted || video.paused || advanced) {
 		_resetInAdFreezeState(safeMediaKey);
-		_InAdFreezeState.video = video;
+		_InAdFreezeState.videoRef = new WeakRef(video);
 		_InAdFreezeState.lastCurrentTime = currentTime;
 		return;
 	}
@@ -7825,6 +7825,8 @@ function _monitorPlayerBuffering() {
 		if (hasActiveAdContext || hasPendingPostAdRecovery)
 			_resetCleanPlaybackFailureSamples();
 		const isHidden = _isNativeDocumentHidden();
+		const isOffline =
+			typeof navigator !== "undefined" && navigator.onLine === false;
 		const hiddenDelay = Math.max(
 			__TTVAB_STATE__.PlayerBufferingDelay * 8,
 			5000,
@@ -7932,6 +7934,15 @@ function _monitorPlayerBuffering() {
 				_clearCachedPlayerRef();
 				return idleDelay;
 			}
+			if (isOffline) {
+				_resetFatalAdMediaRecoveryState();
+				_PinnedBackupStallState.firstObservedAt = 0;
+				_PinnedBackupStallState.lastCurrentTime = 0;
+				_PinnedBackupStallState.lastBufferedEnd = 0;
+				_resetInAdFreezeState(activeAdMediaKey);
+				_resetPlayerBufferMonitorState();
+				return nextDelay;
+			}
 			if (fatalRecoveryTargetsPage) {
 				_checkFatalAdMediaRecovery(pinPlayer);
 			} else {
@@ -8003,7 +8014,7 @@ function _monitorPlayerBuffering() {
 			hasPendingPostAdRecovery = false;
 		}
 
-		if (typeof navigator !== "undefined" && navigator.onLine === false) {
+		if (isOffline) {
 			_resetCleanPlaybackFailureSamples();
 			_resetHiddenCleanLiveStallState(currentMediaKey);
 			_PlayerBufferState.numSame = 0;
@@ -8265,7 +8276,9 @@ function _monitorPlayerBuffering() {
 										reason: "buffer-recovery",
 									});
 								} else {
-									_doPlayerTask(true, false);
+									_doPlayerTask(true, false, {
+										reason: "buffer-recovery",
+									});
 								}
 								_PlayerBufferState.lastFixTime = Date.now();
 								_PlayerBufferState.numSame = 0;
