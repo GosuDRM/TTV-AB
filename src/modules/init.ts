@@ -19,12 +19,16 @@ function _deferInitUntilClipContextLeft() {
 			try {
 				if (
 					typeof _getPlayerAndState !== "function" ||
+					typeof _getPlayerCore !== "function" ||
 					typeof _doPlayerTask !== "function"
 				) {
 					return;
 				}
 				const { player } = _getPlayerAndState();
 				if (!player) return;
+				if (Number(_getPlayerCore(player)?.worker?.__TTVABGeneration) > 0) {
+					return;
+				}
 				_log(
 					"Reloading player to attach worker hooks after deferred init",
 					"info",
@@ -60,13 +64,6 @@ function _bootstrap() {
 	window.ttvabVersion = _C.INTERNAL_VERSION;
 	_log(`v${_C.VERSION} loaded`, "info");
 	return true;
-}
-
-function _getTrustedBridgeMessageDetail(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return null;
-	}
-	return value;
 }
 
 const _PAGE_LOG_EXPORT_MAX_ENTRIES = 3000;
@@ -743,7 +740,7 @@ function _collectPostAdRecoveryDiagnostics() {
 
 function _forwardPreviewFailureDiagnostics(value) {
 	try {
-		const detail = _getTrustedBridgeMessageDetail(value);
+		const detail = _getStructuredMessageData(value);
 		const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 		const mediaKey = _normalizeMediaKey(detail?.mediaKey);
 		if (
@@ -756,7 +753,11 @@ function _forwardPreviewFailureDiagnostics(value) {
 			return false;
 		}
 
-		const collected = _collectPageLogEntries();
+		const collected = _collectPageLogEntries(
+			_PREVIEW_FAILURE_LOG_MAX_ENTRIES,
+			_PAGE_LOG_EXPORT_MAX_BYTES,
+			false,
+		);
 		const entries = collected.entries.slice(-_PREVIEW_FAILURE_LOG_MAX_ENTRIES);
 		const omittedEntries = Math.max(
 			0,
@@ -788,13 +789,9 @@ function _forwardPreviewFailureDiagnostics(value) {
 	}
 }
 
-function _bindBridgePort() {
-	_bindBridgePortHandshake();
-}
-
 function _initToggleListener() {
 	_onInternalMessage("ttvab-toggle", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		const enabled = safeDetail.enabled;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) {
@@ -878,7 +875,7 @@ function _initToggleListener() {
 	});
 
 	_onInternalMessage("ttvab-toggle-ad-spoofing", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		const enabled = safeDetail.enabled;
 		const shouldDisable = !enabled;
@@ -892,7 +889,7 @@ function _initToggleListener() {
 	});
 
 	_onInternalMessage("ttvab-toggle-autoplay-backup", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		const enabled = safeDetail.enabled;
 		const shouldDisable = !enabled;
@@ -909,19 +906,19 @@ function _initToggleListener() {
 	});
 
 	_onInternalMessage("ttvab-toggle-ad-timer", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		_setAdTimerEnabled(safeDetail.enabled);
 	});
 
 	_onInternalMessage("ttvab-stats-paused", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (typeof safeDetail?.paused !== "boolean") return;
 		_setPageStatsPaused(safeDetail.paused);
 	});
 
 	_onInternalMessage("ttvab-language", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (
 			typeof safeDetail?.choice !== "string" ||
 			typeof safeDetail.uiLanguage !== "string" ||
@@ -933,7 +930,7 @@ function _initToggleListener() {
 	});
 
 	_onInternalMessage("ttvab-collect-logs", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		const requestId =
 			typeof safeDetail?.requestId === "string" ? safeDetail.requestId : null;
 		if (!requestId) return;
@@ -1008,19 +1005,19 @@ function _hookSpaNavigation() {
 function _init() {
 	if (!_bootstrap()) return;
 
-	_bindBridgePort();
+	_bindBridgePortHandshake();
 	_declareState(window);
 	_syncPagePlaybackContext({ broadcast: false });
 	_hookVisibilityState();
 	_syncPagePlaybackVisibilityState();
 
 	_onInternalMessage("ttvab-init-count", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const safeDetail = _getStructuredMessageData(detail);
 		if (!Number.isFinite(safeDetail?.count)) return;
-		const pendingInitialAdsBlockedDelta =
-			__TTVAB_STATE__.HasResolvedAdsCountState === true
-				? 0
-				: _normalizeCount(__TTVAB_STATE__.PendingInitialAdsBlockedDelta);
+		const isFirstRestore = __TTVAB_STATE__.HasResolvedAdsCountState !== true;
+		const pendingInitialAdsBlockedDelta = isFirstRestore
+			? _normalizeCount(__TTVAB_STATE__.PendingInitialAdsBlockedDelta)
+			: 0;
 		__TTVAB_STATE__.HasResolvedAdsCountState = true;
 		__TTVAB_STATE__.PendingInitialAdsBlockedDelta = 0;
 		const restoredCount =
@@ -1028,7 +1025,7 @@ function _init() {
 		if (_S.adsBlocked === restoredCount) return;
 		_S.adsBlocked = restoredCount;
 		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
-		_log(`Restored ads count: ${_S.adsBlocked}`, "info");
+		if (isFirstRestore) _log(`Restored ads count: ${_S.adsBlocked}`, "info");
 	});
 
 	_syncStoredDeviceId();

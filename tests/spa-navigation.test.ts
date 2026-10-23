@@ -795,3 +795,168 @@ describe("deferred init after landing on a clip page", () => {
 		expect(initCalls).toHaveLength(1);
 	});
 });
+
+describe("deferred init player reload", () => {
+	const saved: Record<string, unknown> = {};
+	const names = [
+		"_init",
+		"_log",
+		"_getPlayerAndState",
+		"_getPlayerCore",
+		"_doPlayerTask",
+	];
+
+	beforeEach(() => {
+		for (const name of names) saved[name] = g[name];
+		g._log = () => {};
+		g._init = () => {};
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		for (const name of names) g[name] = saved[name];
+		history.replaceState(null, "", "/");
+	});
+
+	function leaveClipWithWorker(worker: Record<string, unknown>) {
+		const reloads: unknown[] = [];
+		g._getPlayerAndState = () => ({ player: {} });
+		g._getPlayerCore = () => ({ worker });
+		g._doPlayerTask = (...args: unknown[]) => reloads.push(args);
+		history.replaceState(null, "", "/somechannel/clip/FunnyMoment");
+		T<() => void>("_deferInitUntilClipContextLeft")();
+		history.replaceState(null, "", "/somechannel");
+		vi.advanceTimersByTime(250 + 500);
+		return reloads;
+	}
+
+	it("reloads a player whose worker started before the hooks", () => {
+		expect(leaveClipWithWorker({})).toHaveLength(1);
+	});
+
+	it("keeps a player that already runs a hooked worker", () => {
+		expect(leaveClipWithWorker({ __TTVABGeneration: 3 })).toEqual([]);
+	});
+});
+
+describe("restored ads count", () => {
+	const saved: Record<string, unknown> = {};
+	const stubs: Record<string, unknown> = {
+		_bindBridgePortHandshake: () => {},
+		_declareState: () => {},
+		_syncPagePlaybackContext: () => {},
+		_hookVisibilityState: () => {},
+		_syncPagePlaybackVisibilityState: () => {},
+		_syncStoredDeviceId: () => {},
+		_hookWorker: () => {},
+		_hookMainFetch: () => {},
+		_initToggleListener: () => {},
+		_sendBridgeMessage: () => {},
+		_initAchievementListener: () => {},
+		_hookSpaNavigation: () => {},
+		_showWelcome: () => {},
+		_showDonation: () => {},
+		_broadcastWorkers: () => {},
+		_getStructuredMessageData: (value: unknown) =>
+			value && typeof value === "object" && !Array.isArray(value)
+				? value
+				: null,
+		_normalizeCount: (value: unknown) =>
+			Math.max(0, Math.trunc(Number(value) || 0)),
+		_C: { VERSION: "1.0.0", INTERNAL_VERSION: 10000 },
+	};
+	let handlers: Map<string, (detail: unknown) => void>;
+	let logs: string[];
+
+	beforeEach(() => {
+		for (const name of [
+			...Object.keys(stubs),
+			"_onInternalMessage",
+			"_log",
+			"_S",
+			"__TTVAB_STATE__",
+		])
+			saved[name] = g[name];
+		Object.assign(g, stubs);
+		handlers = new Map();
+		logs = [];
+		g._onInternalMessage = (type: string, handler: (detail: unknown) => void) =>
+			handlers.set(type, handler);
+		g._log = (message: string) => logs.push(message);
+		g._S = { adsBlocked: 0 };
+		g.__TTVAB_STATE__ = {
+			HasResolvedAdsCountState: false,
+			PendingInitialAdsBlockedDelta: 2,
+		};
+		delete (window as unknown as Record<string, unknown>).ttvabVersion;
+		T<() => void>("_init")();
+	});
+
+	afterEach(() => {
+		for (const [name, value] of Object.entries(saved)) g[name] = value;
+		delete (window as unknown as Record<string, unknown>).ttvabVersion;
+	});
+
+	it("logs the first restore and follows later totals quietly", () => {
+		const restore = handlers.get("ttvab-init-count");
+		restore?.({ count: 10 });
+		restore?.({ count: 11 });
+
+		expect((g._S as { adsBlocked: number }).adsBlocked).toBe(11);
+		expect(logs.filter((message) => message.startsWith("Restored"))).toEqual([
+			"Restored ads count: 12",
+		]);
+	});
+});
+
+describe("_forwardPreviewFailureDiagnostics", () => {
+	const saved: Record<string, unknown> = {};
+	const names = [
+		"_isPreviewsPlayerUrl",
+		"_normalizeMediaKey",
+		"_captureIndependentVideoAdDiagnostics",
+		"_sendBridgeMessage",
+		"_getStructuredMessageData",
+		"__TTVAB_STATE__",
+	];
+
+	beforeEach(() => {
+		for (const name of names) saved[name] = g[name];
+		saved.logs = globalThis.__TTVAB_LOGS__;
+	});
+
+	afterEach(() => {
+		for (const name of names) g[name] = saved[name];
+		globalThis.__TTVAB_LOGS__ = saved.logs as typeof globalThis.__TTVAB_LOGS__;
+	});
+
+	it("sends the newest 64 entries without snapshotting video ads", () => {
+		const capture = vi.fn();
+		const sent: Array<Record<string, unknown>> = [];
+		g._getStructuredMessageData = (value: unknown) => value;
+		g._isPreviewsPlayerUrl = () => true;
+		g._normalizeMediaKey = (value: unknown) => value;
+		g._captureIndependentVideoAdDiagnostics = capture;
+		g._sendBridgeMessage = (_type: string, detail: Record<string, unknown>) =>
+			sent.push(detail);
+		g.__TTVAB_STATE__ = { PageMediaKey: "live:somechannel" };
+		globalThis.__TTVAB_LOGS__ = Array.from({ length: 200 }, (_, index) => ({
+			t: index + 1,
+			l: "info",
+			m: `entry ${index}`,
+		}));
+
+		expect(
+			T<(value: unknown) => boolean>("_forwardPreviewFailureDiagnostics")({
+				mediaKey: "live:somechannel",
+				reason: "retry-failed",
+			}),
+		).toBe(true);
+		expect(capture).not.toHaveBeenCalled();
+		const entries = sent[0].entries as Array<{ m: string }>;
+		expect(entries).toHaveLength(64);
+		expect(entries.at(-1)?.m).toBe("entry 199");
+		expect(sent[0].truncatedEntries).toBe(136);
+	});
+});
