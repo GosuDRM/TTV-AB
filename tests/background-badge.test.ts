@@ -23,6 +23,7 @@ let storageData: Record<string, unknown> = {};
 let startupStorageData: Record<string, unknown> = {};
 let runtimeInstalledListener: ((details: { reason: string }) => void) | null =
 	null;
+let runtimeStartupListener: (() => void) | null = null;
 const storageChangeListeners: Array<
 	(changes: Record<string, { newValue?: unknown }>, namespace: string) => void
 > = [];
@@ -65,6 +66,11 @@ beforeAll(async () => {
 			onInstalled: {
 				addListener: (listener: typeof runtimeInstalledListener) => {
 					runtimeInstalledListener = listener;
+				},
+			},
+			onStartup: {
+				addListener: (listener: typeof runtimeStartupListener) => {
+					runtimeStartupListener = listener;
 				},
 			},
 		},
@@ -363,6 +369,38 @@ describe("bounded counter persistence admission", () => {
 		return { ready, get, release: () => release() };
 	}
 
+	it("still accepts a statistics reset while the queue is full", async () => {
+		(g.chrome as Record<string, Record<string, unknown>>).runtime.getURL = (
+			path: string,
+		) => `moz-extension://ttvab-test/${path}`;
+		const held = holdStorageRead();
+		const requests = Array.from({ length: 64 }, (_, index) =>
+			send(`flush:test:reset-cap-${index}`),
+		);
+		let reset: Promise<unknown> = Promise.resolve();
+		try {
+			await held.ready;
+			expect(g.pendingPersistTaskCount).toBe(64);
+			reset = new Promise((resolveResponse) => {
+				runtimeMessageListener?.(
+					{ type: "ttvab-reset-statistics" },
+					{
+						id: "ttvab-test",
+						url: "moz-extension://ttvab-test/src/popup/popup.html",
+					},
+					resolveResponse,
+				);
+			});
+			expect(g.pendingPersistTaskCount).toBe(65);
+		} finally {
+			held.release();
+			await Promise.all(requests);
+			held.get.mockRestore();
+		}
+		expect(await reset).toEqual({ ok: true });
+		expect(storageData.ttvAdsBlocked).toBe(0);
+	});
+
 	it("rejects duplicate pending IDs without retaining additional response waiters", async () => {
 		const held = holdStorageRead();
 		const first = send("flush:test:pending-duplicate");
@@ -648,6 +686,15 @@ describe("storage-driven badge refresh", () => {
 		}
 		const text = badgeCalls.find((c) => c.method === "setBadgeText");
 		expect(text?.arg).toEqual({ text: "2.5M" });
+	});
+
+	it("repaints the saved count when the browser starts", async () => {
+		storageData = { ttvAdsBlocked: 42 };
+		runtimeStartupListener?.();
+		await Promise.resolve();
+		expect(
+			badgeCalls.find((call) => call.method === "setBadgeText")?.arg,
+		).toEqual({ text: "42" });
 	});
 
 	it("ignores changes from other namespaces and unrelated keys", () => {
@@ -1261,7 +1308,7 @@ describe("measured ad duration persistence", () => {
 describe("diagnostic checkpoints outside Twitch tabs", () => {
 	let sessionData: Record<string, unknown>;
 	let removed: (tabId: number) => void;
-	let updated: (tabId: number, change: Record<string, unknown>) => void;
+	const updatedListener = vi.fn();
 	const pageUrl = "https://www.twitch.tv/testchannel";
 	const sender = { id: "ttvab-test", frameId: 0, url: pageUrl, tab: { id: 1 } };
 	const checkpoint = (time = Date.now()) => ({
@@ -1313,11 +1360,8 @@ describe("diagnostic checkpoints outside Twitch tabs", () => {
 				removed = listener;
 			},
 		};
-		chromeState().tabs.onUpdated = {
-			addListener: (listener: typeof updated) => {
-				updated = listener;
-			},
-		};
+		updatedListener.mockClear();
+		chromeState().tabs.onUpdated = { addListener: updatedListener };
 		loadBackground();
 	});
 	afterEach(() => {
@@ -1366,21 +1410,43 @@ describe("diagnostic checkpoints outside Twitch tabs", () => {
 		expect((await read()).ok).toBe(false);
 	});
 
-	it.each(["close", "reload", "navigate"])(
-		"clears the checkpoint on %s",
-		async (event) => {
-			await retain();
-			if (event === "close") removed(1);
-			else
-				updated(
-					1,
-					event === "reload"
-						? { status: "loading" }
-						: { url: "https://www.twitch.tv/otherchannel" },
-				);
-			expect((await read()).ok).toBe(false);
-		},
-	);
+	it("clears the checkpoint when its tab closes", async () => {
+		await retain();
+		removed(1);
+		expect((await read()).ok).toBe(false);
+	});
+
+	it("does not wake for page loads in other tabs", () => {
+		expect(updatedListener).not.toHaveBeenCalled();
+	});
+
+	it("keeps writes in order when session storage answers after the response timeout", async () => {
+		const session = chromeState().storage.session as {
+			set: (value: Record<string, unknown>, callback: () => void) => void;
+		};
+		const originalSet = session.set;
+		let releaseFirstSet = () => {};
+		let holdNextSet = true;
+		session.set = (value, callback) => {
+			if (!holdNextSet) {
+				originalSet(value, callback);
+				return;
+			}
+			holdNextSet = false;
+			releaseFirstSet = () => originalSet(value, callback);
+		};
+
+		const first = retain(checkpoint(99000));
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(await first).toEqual({ ok: false });
+		const newer = checkpoint();
+		const second = retain(newer);
+		await vi.advanceTimersByTimeAsync(0);
+		releaseFirstSet();
+
+		expect(await second).toEqual({ ok: true });
+		expect((await read()).checkpoint).toEqual(newer);
+	});
 
 	it.each(["subframe", "outside Twitch", "wrong page", "oversize"])(
 		"rejects %s writes",
@@ -1608,6 +1674,35 @@ describe("statistics history, eviction, and reset", () => {
 		expect(writes.map((value) => Object.keys(value).sort())).toEqual([
 			["ttvStats", "ttvUnconfirmedCounterFlushes"],
 		]);
+	});
+
+	it("drops untimed watch time created before the Turbo boundary", async () => {
+		const boundary = Date.now();
+		storageData.ttvWatchStatsSinceAt = boundary;
+		await persist({
+			flushId: "flush:test:untimed-before",
+			createdAt: boundary - 60000,
+			watchDeltas: { somestreamer: 60 },
+		});
+		expect(storageData.ttvStats).toBeUndefined();
+
+		await persist({
+			flushId: "flush:test:untimed-after",
+			createdAt: boundary,
+			watchDeltas: { somestreamer: 60 },
+		});
+		expect(stats().channels.somestreamer.watchSeconds).toBe(60);
+	});
+
+	it("caps the blocked ads one update can add", async () => {
+		await persist({
+			flushId: "flush:test:huge-delta",
+			createdAt: Date.now(),
+			adsDelta: 1e9,
+			channelDeltas: { somestreamer: 1e9 },
+		});
+		expect(storageData.ttvAdsBlocked).toBe(1000);
+		expect(stats().channels.somestreamer.ads).toBe(1000);
 	});
 
 	it("resets statistics only for the popup and drops work created before the reset", async () => {
