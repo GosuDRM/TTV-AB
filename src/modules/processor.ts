@@ -2444,7 +2444,7 @@ function _logServedEndAheadOfClock(
 			return;
 		const source = metadata?.playerType
 			? `${metadata.playerType} ${metadata.resolution || "unknown"}`
-			: `native ${info.Urls?.[_getMediaPlaylistSessionKey(url)]?.Resolution || "unknown"}`;
+			: `native ${_getNativePlaylistVariant(info, url)?.variant.Resolution || "unknown"}`;
 		const key = `${cause}|${source}`;
 		const last = _ServedEndAheadLogs.get(info);
 		if (
@@ -2567,7 +2567,7 @@ function _alignLivePlaylist(
 				backupMetadata.sessionUrl,
 				backupMetadata.playlistUrl,
 			])
-		: `native|${info.UsherBaseUrl || info.MediaKey}`;
+		: `native|${_getNativePlaylistVariant(info, url)?.masterUrl || info.UsherBaseUrl || info.MediaKey}`;
 	let changedSource = previous?.identity !== identity || previous?.afterHold;
 	let minimumTime = changedSource
 		? backupMetadata || previous?.backup || previous?.afterHold
@@ -2977,6 +2977,7 @@ function _logPlaylistContinuity(
 		};
 		const state = info._PlaylistContinuityDiagnostics;
 		const requestKey = _getMediaPlaylistSessionKey(url);
+		const nativeVariant = _getNativePlaylistVariant(info, url);
 		const hold = text.includes(
 			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
@@ -2984,7 +2985,9 @@ function _logPlaylistContinuity(
 			requestKey,
 			hold ? "hold" : metadata?.playerType || "native",
 			_getMediaPlaylistSessionKey(metadata?.playlistUrl || url),
-			_getMediaPlaylistSessionKey(metadata?.sessionUrl || info.UsherBaseUrl),
+			_getMediaPlaylistSessionKey(
+				metadata?.sessionUrl || nativeVariant?.masterUrl || info.UsherBaseUrl,
+			),
 		]);
 		let source = state.sources.get(sourceKey);
 		if (!source) {
@@ -3043,7 +3046,7 @@ function _logPlaylistContinuity(
 								? "timestamp-overlap"
 								: "";
 		const previousSource = state.lastServedSourceId || null;
-		const native = info.Urls?.[requestKey];
+		const native = nativeVariant?.variant;
 		const resolution = metadata?.resolution || native?.Resolution;
 		const servedResolution = /^\d{1,5}x\d{1,5}$/.test(resolution)
 			? resolution
@@ -3749,6 +3752,22 @@ function _getMediaPlaylistSessionKey(url) {
 	} catch {
 		return exactUrl;
 	}
+}
+
+function _getNativePlaylistVariant(info: Partial<TTVABStreamInfo>, url) {
+	const key = _getMediaPlaylistSessionKey(url);
+	if (!key) return null;
+	const current = info?.Urls?.[key];
+	if (current) return { variant: current, masterUrl: info.UsherBaseUrl };
+	const retained = info?._NativePlaybackMaster;
+	const variant =
+		retained?.mediaKey === info.MediaKey &&
+		Array.isArray(retained.resolutionList)
+			? retained.resolutionList.find(
+					(entry) => _getMediaPlaylistSessionKey(entry?.Url) === key,
+				)
+			: null;
+	return variant ? { variant, masterUrl: retained.masterUrl } : null;
 }
 
 function _getEmptyHoldUpstreamUrl(info: Partial<TTVABStreamInfo>, url) {
