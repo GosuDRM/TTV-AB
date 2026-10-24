@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [25.0.1] - 2026-10-24
+
+Fixed
+
+- **Player Stopping After Some Ad Breaks** - Accept the stream when Twitch renumbers it after an ad break, instead of rejecting it until the player stopped with a network error. ([#96](https://github.com/GosuDRM/TTV-AB/issues/96))
+
+Added
+
+- **Black Screen Diagnostics** - Record in debug logs when the stream's timing runs ahead of your clock, to help track down a black screen during some ad breaks.
+
 ## [25.0.0] - 2026-10-23
 
 Fixed

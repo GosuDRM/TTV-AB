@@ -74,6 +74,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v25.0.1 - 2026-10-24
+
+- **Player Stopping After Some Ad Breaks** - Accept the stream when Twitch renumbers it after an ad break, instead of rejecting it until the player stopped with a network error. ([#96](https://github.com/GosuDRM/TTV-AB/issues/96))
+- **Black Screen Diagnostics** - Record in debug logs when the stream's timing runs ahead of your clock, to help track down a black screen during some ad breaks.
+
 ### v25.0.0 - 2026-10-23
 
 - **Leaving Clip Pages** - Stop restarting the stream after you leave a clip page when the next page's player is already set up for ad blocking.
@@ -127,13 +132,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Translated Pop-ups** - Translate the welcome message, achievement pop-ups, and Ad Break Timer into all 12 supported languages, using the same achievement names as the popup.
 - **Clearer Language Menu** - Show which language Auto picked, and show the Brazilian flag for Portuguese to match its Brazilian translation.
 - **Turbo Mode Explanation** - Add an info button next to Turbo Mode that explains what it pauses and that ad blocking keeps working.
-
-### v24.0.1 - 2026-10-22
-
-- **Background Tab CPU Usage** - Stop Twitch tabs opened in the background from using a full CPU core while Brave Shields blocks trackers and ads. Playback the browser has held back is no longer started early, which kept Twitch's player in a rapid play and pause loop until you viewed the tab. ([#94](https://github.com/GosuDRM/TTV-AB/issues/94))
-- **Unopened Tabs Under Brave** - Treat Twitch tabs you have not opened yet as background tabs even when Brave Shields reports them as visible, so they are checked less often.
-- **Black Screen at Ad Breaks** - Shorten the black screen at the start of ad breaks on streams whose timestamps run ahead of real time, and stop skipping or replaying part of the stream when switching to and from the backup. ([#92](https://github.com/GosuDRM/TTV-AB/issues/92))
-- **Timestamp Diagnostics** - Show in debug logs how far the timing was shifted to line up two Twitch sources whose timestamps disagree.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
