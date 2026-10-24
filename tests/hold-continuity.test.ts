@@ -463,6 +463,101 @@ describe("empty hold playlist continuity", () => {
 		expect(ahead()[2]).toContain("after prefetch from native 1920x1080");
 	});
 
+	describe("native playlist renumbered after its return", () => {
+		const dated = (
+			sequence: number,
+			start: number,
+			prefix: string,
+			count = 3,
+		) =>
+			[
+				"#EXTM3U",
+				"#EXT-X-VERSION:3",
+				"#EXT-X-TARGETDURATION:2",
+				`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
+				"#EXT-X-DISCONTINUITY-SEQUENCE:0",
+				...Array.from({ length: count }, (_, index) => [
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + index * 2000).toISOString()}`,
+					"#EXTINF:2.000,live",
+					`https://edge.example/${prefix}-${sequence + index}.ts`,
+				]).flat(),
+			].join("\n");
+		const returnToNative = () => {
+			const { context, info } = setup();
+			const now = Date.now();
+			const apply = (text: string, metadata: unknown = null) =>
+				context._applyPlaylistContinuity(info, nativeUrl, text, metadata);
+			apply(dated(400, now - 10000, "native"));
+			info.IsUsingBackupStream = true;
+			apply(dated(100, now - 6000, "site"), {
+				playerType: "site",
+				resolution: "1920x1080",
+				codec: "avc1.64002a",
+				playlistUrl: "https://edge.example/site.m3u8?session=one",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+			});
+			info.IsShowingAd = false;
+			info.IsUsingBackupStream = false;
+			apply(dated(402, now - 2000, "native"));
+			const served = segments(apply(dated(403, now, "native")));
+			return { context, info, now, apply, served };
+		};
+
+		it("serves a renumbered playlist from where playback reached instead of failing every refresh", () => {
+			const { context, info, now, apply, served } = returnToNative();
+			const logs: string[] = [];
+			context._log = (message: string) => logs.push(message);
+
+			const restarted = apply(dated(395, now + 2000, "origin-b"));
+			const refreshed = apply(dated(396, now + 4000, "origin-b"));
+
+			const [first] = segments(restarted);
+			expect(segments(restarted).map((entry) => entry.url)).toEqual([
+				"https://edge.example/origin-b-397.ts",
+			]);
+			expect(first.sequence).toBe(served.at(-1).sequence + 1);
+			expect(first.discontinuity).toBe(served.at(-1).discontinuity + 1);
+			expect(restarted).toContain(
+				`#EXT-X-DISCONTINUITY\n#EXT-X-PROGRAM-DATE-TIME:${new Date(now + 6000).toISOString()}`,
+			);
+			expect(segments(refreshed)).toEqual([
+				first,
+				{
+					sequence: first.sequence + 1,
+					discontinuity: first.discontinuity,
+					url: "https://edge.example/origin-b-398.ts",
+				},
+			]);
+			expect(info._LivePlaylistTimeline.minimumTime).toBe(now + 6000);
+			expect(
+				logs.some((message) => message.startsWith("[Continuity] handoff ")),
+			).toBe(true);
+		});
+
+		it("keeps the numbering for a delayed copy of the same playlist", () => {
+			const { apply, now, served } = returnToNative();
+
+			expect(segments(apply(dated(402, now - 2000, "native")))).toEqual(
+				served.slice(0, 2),
+			);
+		});
+
+		it("keeps the numbering when a refresh that jumps ahead still matches a served segment", () => {
+			const { apply, now, served } = returnToNative();
+			const wider = dated(402, now - 2000, "native", 5)
+				.replace(
+					new Date(now + 2000).toISOString(),
+					new Date(now + 2001).toISOString(),
+				)
+				.replace(
+					new Date(now + 6000).toISOString(),
+					new Date(now + 9000).toISOString(),
+				);
+
+			expect(segments(apply(wider)).slice(0, 3)).toEqual(served);
+		});
+	});
+
 	it("names native media from the retained catalog after a reduced master", () => {
 		const { context, info } = setup();
 		const logs: string[] = [];
