@@ -2420,10 +2420,52 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
+const _ServedEndAheadLogs = new WeakMap<
+	object,
+	{ key: string; at: number; leadMs: number }
+>();
+
+function _logServedEndAheadOfClock(
+	info: Partial<TTVABStreamInfo>,
+	previousEndTime,
+	nextEndTime,
+	cause,
+	url,
+	metadata = null,
+) {
+	try {
+		const now = Date.now();
+		const leadMs = nextEndTime - now;
+		if (
+			info?.MediaType !== "live" ||
+			!(nextEndTime > previousEndTime) ||
+			!(leadMs > 1000)
+		)
+			return;
+		const source = metadata?.playerType
+			? `${metadata.playerType} ${metadata.resolution || "unknown"}`
+			: `native ${info.Urls?.[_getMediaPlaylistSessionKey(url)]?.Resolution || "unknown"}`;
+		const key = `${cause}|${source}`;
+		const last = _ServedEndAheadLogs.get(info);
+		if (
+			last?.key === key &&
+			now - last.at < 60000 &&
+			leadMs < last.leadMs + 1000
+		)
+			return;
+		_ServedEndAheadLogs.set(info, { key, at: now, leadMs });
+		_log(
+			`[Continuity] served end ${(leadMs / 1000).toFixed(1)}s ahead of the local clock after ${cause} from ${source} (advanced ${((nextEndTime - previousEndTime) / 1000).toFixed(1)}s; ${info.IsShowingAd || info.IsHoldingBackupAfterAd ? `${info._LastServedPlaylistKind || "unknown"} during ad` : "live"}) for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}`,
+			"warning",
+		);
+	} catch {}
+}
+
 function _observeServedPrefetchTimeline(
 	info: Partial<TTVABStreamInfo>,
 	url,
 	text,
+	metadata = null,
 ) {
 	const previous = info?._LivePlaylistTimeline;
 	if (
@@ -2483,6 +2525,14 @@ function _observeServedPrefetchTimeline(
 	}
 	if (lastEndTime > previous.lastEndTime) {
 		info._LivePlaylistTimeline = { ...previous, lastEndTime, lastEndSequence };
+		_logServedEndAheadOfClock(
+			info,
+			previous.lastEndTime,
+			lastEndTime,
+			"prefetch",
+			url,
+			metadata,
+		);
 	}
 }
 
@@ -3294,6 +3344,7 @@ function _applyPlaylistContinuity(
 		info,
 		backupMetadata?.playlistUrl || url,
 		text,
+		backupMetadata,
 	);
 	const previous = info?._LivePlaylistTimeline;
 	const previousMapping =
@@ -3499,6 +3550,14 @@ function _applyPlaylistContinuity(
 			}
 			timeline.prefetchedSegments = [...prefetched.values()].slice(-32);
 		}
+		_logServedEndAheadOfClock(
+			info,
+			Number(previous?.lastEndTime) || 0,
+			Number(info?._LivePlaylistTimeline?.lastEndTime) || 0,
+			"playlist",
+			backupMetadata?.playlistUrl || url,
+			backupMetadata,
+		);
 		_logPlaylistContinuity(
 			info,
 			url,
@@ -5365,7 +5424,7 @@ function _commitBackupPlaylist(
 	) {
 		return null;
 	}
-	_observeServedPrefetchTimeline(info, metadata.playlistUrl, m3u8);
+	_observeServedPrefetchTimeline(info, metadata.playlistUrl, m3u8, metadata);
 	const previousDescription = info.LastCleanBackupM3U8
 		? `${info.LastCleanBackupPlayerType || "none"}@${info.LastCleanBackupResolution || "unknown"}`
 		: "none@unknown";

@@ -422,6 +422,47 @@ describe("empty hold playlist continuity", () => {
 		expect(info._LivePlaylistTimeline.minimumTime).toBe(start + 10000);
 	});
 
+	it("logs when the served end moves ahead of the local clock, without repeating", () => {
+		const { context, info } = setup();
+		const logs: string[] = [];
+		context._log = (message: string) => logs.push(message);
+		const ahead = () =>
+			logs.filter((message) => message.includes("ahead of the local clock"));
+		const dated = (sequence: number, start: number, prefetch = "") =>
+			`${playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+			)}${prefetch ? `\n#EXT-X-TWITCH-PREFETCH:${prefetch}` : ""}`;
+		const now = Date.now();
+
+		context._applyPlaylistContinuity(info, nativeUrl, dated(400, now - 10000));
+		expect(ahead()).toEqual([]);
+
+		context._applyPlaylistContinuity(info, nativeUrl, dated(403, now - 1000));
+		expect(ahead()).toHaveLength(1);
+		expect(ahead()[0]).toMatch(
+			/served end [45]\.\ds ahead of the local clock after playlist from native 1920x1080 \(advanced \d+\.\ds; native during ad\) for live:testchannel/,
+		);
+
+		context._applyPlaylistContinuity(info, nativeUrl, dated(404, now - 500));
+		expect(ahead()).toHaveLength(1);
+
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			dated(405, now + 1500, "https://edge.example/prefetch-408.ts"),
+		);
+		expect(ahead()).toHaveLength(2);
+
+		context._observeServedPrefetchTimeline(
+			info,
+			nativeUrl,
+			`#EXTM3U\n#EXT-X-PROGRAM-DATE-TIME:${new Date(now + 7500).toISOString()}\n#EXTINF:2.000,live\nhttps://edge.example/prefetch-408.ts`,
+		);
+		expect(ahead()).toHaveLength(3);
+		expect(ahead()[2]).toContain("after prefetch from native 1920x1080");
+	});
+
 	it("uses confirmed prefetch durations without claiming later unserved segments", async () => {
 		const { context, info, serve } = setup();
 		const start = Date.parse("2026-10-08T01:14:30Z");
