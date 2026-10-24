@@ -463,6 +463,76 @@ describe("empty hold playlist continuity", () => {
 		expect(ahead()[2]).toContain("after prefetch from native 1920x1080");
 	});
 
+	it("names native media from the retained catalog after a reduced master", () => {
+		const { context, info } = setup();
+		const logs: string[] = [];
+		context._log = (message: string) => logs.push(message);
+		const now = Date.now();
+		const dated = (sequence: number, start: number, prefix: string) =>
+			playlist(sequence, 3, prefix).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+			);
+		const handoffs = () =>
+			logs
+				.filter((message) => message.startsWith("[Continuity] handoff "))
+				.map((message) =>
+					JSON.parse(message.slice("[Continuity] handoff ".length)),
+				);
+
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			dated(400, now - 10000, "native"),
+		);
+		info.IsUsingBackupStream = true;
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			dated(100, now - 6000, "backup"),
+			{
+				playerType: "autoplay",
+				resolution: "640x360",
+				codec: "avc1.4d401f",
+				playlistUrl: "https://edge.example/autoplay.m3u8?session=one",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+			},
+		);
+		info.IsUsingBackupStream = false;
+		info._NativePlaybackMaster = {
+			master: info.EncodingsM3U8,
+			masterUrl: info.UsherBaseUrl,
+			resolutionList: [
+				{ Url: nativeUrl, Resolution: "1920x1080", Codecs: codec },
+			],
+			mediaKey: info.MediaKey,
+			pageGeneration: 0,
+			observedAt: now - 60000,
+		};
+		info.UsherBaseUrl += "?token=reduced";
+		delete info.Urls[nativeUrl];
+		info.Urls["https://edge.example/reduced-360p.m3u8?token=reduced"] = {
+			Resolution: "640x360",
+			Codecs: "avc1.4d401f,mp4a.40.2",
+		};
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			dated(402, now - 2000, "native"),
+		);
+
+		const [toBackup, toNative] = handoffs();
+		expect(toNative).toMatchObject({
+			source: "native",
+			sourceId: toBackup.previousSourceId,
+			resolution: "1920x1080",
+			codec: "avc1.64002a",
+		});
+		expect(
+			logs.find((message) => message.includes("ahead of the local clock")),
+		).toContain("from native 1920x1080");
+	});
+
 	it("uses confirmed prefetch durations without claiming later unserved segments", async () => {
 		const { context, info, serve } = setup();
 		const start = Date.parse("2026-10-08T01:14:30Z");
@@ -2075,6 +2145,64 @@ describe("empty hold playlist continuity", () => {
 				),
 			).toThrow("Live handoff playlist is behind the served broadcast time");
 			expect(diagnostic.clockShiftMs).toBe(-12000);
+		});
+
+		it("keeps a returning native clock when a reduced master replaced the catalog during the break", () => {
+			const { context, info, base, datedEndingAt, backup, look, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(99, base - 4000, "backup"),
+				backup,
+			);
+			look(datedEndingAt(399, base + 8000, "native"));
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(100, base - 2000, "backup"),
+				backup,
+			);
+			info._NativePlaybackMaster = {
+				master: info.EncodingsM3U8,
+				masterUrl: info.UsherBaseUrl,
+				resolutionList: [
+					{ Url: nativeUrl, Resolution: "1920x1080", Codecs: codec },
+				],
+				mediaKey: info.MediaKey,
+				pageGeneration: 0,
+				observedAt: base - 60000,
+			};
+			const reducedUrl = "https://edge.example/reduced-360p.m3u8?token=reduced";
+			info.UsherBaseUrl += "?token=reduced";
+			delete info.Urls[nativeUrl];
+			info.Urls[reducedUrl] = {
+				Resolution: "640x360",
+				Codecs: "avc1.4d401f,mp4a.40.2",
+			};
+			const returning = datedEndingAt(400, base + 10000, "native");
+			const reduced: Record<string, unknown> = {};
+			context._alignLivePlaylist(
+				info,
+				returning,
+				null,
+				false,
+				reducedUrl,
+				reduced,
+			);
+			const diagnostic: Record<string, unknown> = {};
+
+			expect(() =>
+				context._alignLivePlaylist(
+					info,
+					returning,
+					null,
+					false,
+					nativeUrl,
+					diagnostic,
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(diagnostic.clockShiftMs).toBe(-12000);
+			expect(reduced.clockShiftMs).toBe(0);
 		});
 	});
 
