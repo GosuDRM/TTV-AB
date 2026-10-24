@@ -193,6 +193,7 @@ type TTVABPlaylistAlignmentDiagnostic = {
 	minimumTime?: number;
 	minimumSequence?: number | null;
 	joinsAtServedEnd?: boolean;
+	restartsNativeNumbering?: boolean;
 	firstTime?: number;
 	lastEndTime?: number;
 	retainedTime?: number;

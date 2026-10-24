@@ -2758,6 +2758,7 @@ function _alignLivePlaylist(
 		}
 	}
 	const rawFirstSequence = _parsePlaylistFirstMediaSequence(text);
+	let restartsNativeNumbering = false;
 	if (
 		nativeTimeline?.kind === "native" &&
 		Object.hasOwn(info.Urls || {}, nativeKey) &&
@@ -2784,6 +2785,25 @@ function _alignLivePlaylist(
 			entries.at(-1).end > lastAnchor.time + lastAnchor.duration
 		) {
 			minimumTime = Math.max(minimumTime, anchor.time);
+		} else if (
+			lastAnchor &&
+			entries.at(-1).time -
+				lastAnchor.time -
+				(rawFirstSequence + entries.length - 1 - lastAnchor.sequence) *
+					lastAnchor.duration >=
+				lastAnchor.duration &&
+			!entries.some((entry, index) =>
+				nativeTimeline.nativeAnchors?.some(
+					(expected) =>
+						expected.sequence === rawFirstSequence + index &&
+						expected.time === entry.time &&
+						expected.duration === entry.duration,
+				),
+			)
+		) {
+			minimumTime = Math.max(minimumTime, previousEndTime);
+			changedSource = true;
+			restartsNativeNumbering = true;
 		}
 	}
 	let pendingTime = entries.at(-1).end;
@@ -2820,6 +2840,7 @@ function _alignLivePlaylist(
 		diagnostic.changedSource = Boolean(changedSource);
 		diagnostic.minimumTime = minimumTime;
 		diagnostic.minimumSequence = minimumSequence;
+		diagnostic.restartsNativeNumbering = restartsNativeNumbering;
 	}
 	if (text.includes("#EXT-X-SKIP:")) {
 		if (minimumTime)
@@ -3370,6 +3391,7 @@ function _applyPlaylistContinuity(
 			backupMetadata,
 			diagnostic.minimumSequence,
 			diagnostic.joinsAtServedEnd === true,
+			diagnostic.restartsNativeNumbering === true,
 		);
 		if (mapped == null && diagnostic.joinsAtServedEnd)
 			throw new DOMException(
@@ -3815,6 +3837,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	backupMetadata = null,
 	servedEndSequence: number | null = null,
 	retainsServedEndSegment = false,
+	restartsNativeNumbering = false,
 ) {
 	if (
 		!info ||
@@ -3936,7 +3959,8 @@ function _applyEmptyHoldPlaylistContinuity(
 							: key,
 					],
 	);
-	let changedSource = previous?.identity !== identity;
+	const restartsNumbering = restartsNativeNumbering && kind === "native";
+	let changedSource = previous?.identity !== identity || restartsNumbering;
 	let sharedTimeline = null;
 	let lastGeneration = 0;
 	const firstMappedSource = !info._EmptyHoldTimelineByUrl?.size;
@@ -3983,6 +4007,7 @@ function _applyEmptyHoldPlaylistContinuity(
 			)
 				sharedTimeline = candidate;
 		}
+		if (restartsNumbering) sharedTimeline = null;
 		if (
 			kind === "native" &&
 			nativeAnchors.length > 0 &&
