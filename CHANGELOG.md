@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [25.0.2] - 2026-10-26
+
+Added
+
+- **Ad Break Buffering Diagnostics** - Record in debug logs how often and when the stream buffers during each ad break and while it returns to the stream, to help track down buffering during some ad breaks.
+
 ## [25.0.1] - 2026-10-24
 
 Fixed
