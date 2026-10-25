@@ -143,6 +143,10 @@ const _POST_AD_RECOVERY_STABLE_PLAYBACK_MS = 6000;
 const _IN_AD_FREEZE_DETECT_MS = 5000;
 const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
 const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
+const _AD_REBUFFER_MIN_STALL_MS = 500;
+const _AD_REBUFFER_STALLING_INTERVAL_LOST_MS = 250;
+const _AD_REBUFFER_MAX_SAMPLE_GAP_MS = 5000;
+const _AD_REBUFFER_MAX_LISTED_STALLS = 8;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
@@ -223,6 +227,20 @@ const _InAdFreezeState = {
 	lastCurrentTime: -1,
 	lastActionAt: 0,
 	actionCount: 0,
+};
+const _AdRebufferState = {
+	mediaKey: null as string | null,
+	cycleStartedAt: 0,
+	startedAt: 0,
+	observedMs: 0,
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
+	lastSampleAt: 0,
+	lastCurrentTime: -1,
+	stallStartedAt: 0,
+	stallLostMs: 0,
+	stallCount: 0,
+	totalStallMs: 0,
+	stalls: [] as Array<{ startedAt: number; lostMs: number }>,
 };
 const _HiddenCleanLiveStallState = {
 	mediaKey: null as string | null,
@@ -7071,6 +7089,161 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 	});
 }
 
+function _resetAdRebufferState(mediaKey = null, cycleStartedAt = 0) {
+	_AdRebufferState.mediaKey = _normalizeMediaKey(mediaKey);
+	_AdRebufferState.cycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	_AdRebufferState.startedAt = _AdRebufferState.mediaKey ? Date.now() : 0;
+	_AdRebufferState.observedMs = 0;
+	_AdRebufferState.videoRef = null;
+	_AdRebufferState.lastSampleAt = 0;
+	_AdRebufferState.lastCurrentTime = -1;
+	_AdRebufferState.stallStartedAt = 0;
+	_AdRebufferState.stallLostMs = 0;
+	_AdRebufferState.stallCount = 0;
+	_AdRebufferState.totalStallMs = 0;
+	_AdRebufferState.stalls = [];
+}
+
+function _closeAdRebufferStall() {
+	if (
+		_AdRebufferState.stallStartedAt > 0 &&
+		_AdRebufferState.stallLostMs >= _AD_REBUFFER_MIN_STALL_MS
+	) {
+		_AdRebufferState.stallCount += 1;
+		_AdRebufferState.totalStallMs += _AdRebufferState.stallLostMs;
+		if (_AdRebufferState.stalls.length < _AD_REBUFFER_MAX_LISTED_STALLS) {
+			_AdRebufferState.stalls.push({
+				startedAt: _AdRebufferState.stallStartedAt,
+				lostMs: _AdRebufferState.stallLostMs,
+			});
+		}
+	}
+	_AdRebufferState.stallStartedAt = 0;
+	_AdRebufferState.stallLostMs = 0;
+}
+
+function _logAdRebufferSummary() {
+	if (!_AdRebufferState.mediaKey) return;
+	_closeAdRebufferStall();
+	const formatSeconds = (milliseconds) =>
+		`${(Math.max(0, milliseconds) / 1000).toFixed(1)}s`;
+	const startedAt =
+		_AdRebufferState.cycleStartedAt || _AdRebufferState.startedAt;
+	const stallCount = _AdRebufferState.stallCount;
+	const visible = `over ${formatSeconds(_AdRebufferState.observedMs)} visible`;
+	let summary = "not measured (playback hidden or paused)";
+	if (_AdRebufferState.observedMs > 0 && stallCount === 0) {
+		summary = `none ${visible}`;
+	} else if (stallCount > 0) {
+		const listed = _AdRebufferState.stalls
+			.map(
+				(stall) =>
+					`${formatSeconds(stall.startedAt - startedAt)} for ${formatSeconds(stall.lostMs)}`,
+			)
+			.join(", ");
+		const unlisted = stallCount - _AdRebufferState.stalls.length;
+		summary = `${stallCount} stall${stallCount === 1 ? "" : "s"}, ${formatSeconds(_AdRebufferState.totalStallMs)} total ${visible} (at ${listed}${unlisted > 0 ? `, +${unlisted} more` : ""})`;
+	}
+	_log(
+		`[Break] rebuffering ${_AdRebufferState.mediaKey}${_AdRebufferState.cycleStartedAt ? ` cycle ${_AdRebufferState.cycleStartedAt}` : ""}: ${summary}`,
+		stallCount > 0 ? "warning" : "info",
+	);
+	_resetAdRebufferState();
+}
+
+function _sampleAdRebuffering(video, mediaKey, cycleStartedAt = 0) {
+	const safeMediaKey = _normalizeMediaKey(mediaKey);
+	if (!safeMediaKey) return;
+	const safeCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	if (
+		_AdRebufferState.mediaKey !== safeMediaKey ||
+		(safeCycleStartedAt > 0 &&
+			_AdRebufferState.cycleStartedAt > 0 &&
+			safeCycleStartedAt !== _AdRebufferState.cycleStartedAt)
+	) {
+		_logAdRebufferSummary();
+		_resetAdRebufferState(safeMediaKey, safeCycleStartedAt);
+	} else if (!_AdRebufferState.cycleStartedAt) {
+		_AdRebufferState.cycleStartedAt = safeCycleStartedAt;
+	}
+	const now = Date.now();
+	if (
+		!(video instanceof HTMLMediaElement) ||
+		video.paused ||
+		video.ended ||
+		Number(video.readyState) < 1
+	) {
+		_closeAdRebufferStall();
+		_AdRebufferState.videoRef = null;
+		_AdRebufferState.lastSampleAt = 0;
+		_AdRebufferState.lastCurrentTime = -1;
+		return;
+	}
+	const currentTime = Number(video.currentTime) || 0;
+	if (
+		_AdRebufferState.videoRef?.deref() !== video ||
+		_AdRebufferState.lastSampleAt <= 0 ||
+		now - _AdRebufferState.lastSampleAt > _AD_REBUFFER_MAX_SAMPLE_GAP_MS ||
+		currentTime < _AdRebufferState.lastCurrentTime - 0.25
+	) {
+		_closeAdRebufferStall();
+		_AdRebufferState.videoRef = new WeakRef(video);
+		_AdRebufferState.lastSampleAt = now;
+		_AdRebufferState.lastCurrentTime = currentTime;
+		return;
+	}
+	const elapsedMs = now - _AdRebufferState.lastSampleAt;
+	const playedMs = Math.min(
+		elapsedMs,
+		Math.max(0, (currentTime - _AdRebufferState.lastCurrentTime) * 1000),
+	);
+	const lostMs = elapsedMs - playedMs;
+	_AdRebufferState.observedMs += elapsedMs;
+	if (lostMs >= _AD_REBUFFER_STALLING_INTERVAL_LOST_MS) {
+		if (!_AdRebufferState.stallStartedAt) {
+			_AdRebufferState.stallStartedAt =
+				_AdRebufferState.lastSampleAt + playedMs;
+		}
+		_AdRebufferState.stallLostMs += lostMs;
+	} else if (_AdRebufferState.stallStartedAt) {
+		_AdRebufferState.stallLostMs += lostMs;
+		_closeAdRebufferStall();
+	}
+	_AdRebufferState.lastSampleAt = now;
+	_AdRebufferState.lastCurrentTime = currentTime;
+}
+
+function _sampleAdRebufferingAfterBreak(isHidden, isOffline) {
+	const mediaKey = _AdRebufferState.mediaKey;
+	if (!mediaKey) return;
+	const transaction = _PostAdRecoveryTransactionState;
+	const transactionCycleStartedAt = Math.max(
+		0,
+		Number(transaction.cycleStartedAt) || 0,
+	);
+	if (
+		_normalizeMediaKey(transaction.mediaKey) !== mediaKey ||
+		(_AdRebufferState.cycleStartedAt > 0 &&
+			transactionCycleStartedAt > 0 &&
+			transactionCycleStartedAt !== _AdRebufferState.cycleStartedAt) ||
+		(transaction.expiresAt > 0 && Date.now() > transaction.expiresAt)
+	) {
+		_logAdRebufferSummary();
+		return;
+	}
+	const targetsPictureInPicture =
+		_normalizeMediaKey(
+			_getActivePictureInPicturePlaybackContext()?.MediaKey,
+		) === mediaKey;
+	_sampleAdRebuffering(
+		(isHidden && !targetsPictureInPicture) || isOffline
+			? null
+			: _getPlaybackMediaElementForContext(transaction.channel, mediaKey),
+		mediaKey,
+		_AdRebufferState.cycleStartedAt,
+	);
+}
+
 function _checkHiddenCleanLiveStall(player, channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _normalizeMediaKey(mediaKey);
@@ -7841,6 +8014,9 @@ function _monitorPlayerBuffering() {
 		try {
 			_trackChannelWatchTime(isHidden);
 		} catch {}
+		if (!hasActiveAdContext) {
+			_sampleAdRebufferingAfterBreak(isHidden, isOffline);
+		}
 		if (!hasActiveAdContext && currentMediaKey) {
 			_restoreReattachedSuppressedPrimaryMedia();
 		}
@@ -7928,6 +8104,13 @@ function _monitorPlayerBuffering() {
 				};
 			}
 			_suppressCompetingMediaDuringAd(activeAdChannel, activeAdMediaKey);
+			_sampleAdRebuffering(
+				(isHidden && !targetsPictureInPicture) || isOffline
+					? null
+					: pinPlayer?.getHTMLVideoElement?.(),
+				activeAdMediaKey,
+				_getPlayerLifecycleCycleStartedAt(activeAdMediaKey),
+			);
 			if (_isPlayerWorkerUnavailable(pinPlayer)) {
 				_resetFatalAdMediaRecoveryState();
 				_resetPinnedBackupStallState();

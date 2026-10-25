@@ -702,3 +702,260 @@ describe("Previews for Twitch quality interop", () => {
 		);
 	});
 });
+
+describe("ad break rebuffering summary", () => {
+	function controlClock(video: HTMLVideoElement) {
+		const clock = { frozen: false, mediaTime: 20, readAt: Date.now() };
+		const read = () => {
+			const now = Date.now();
+			if (!clock.frozen) clock.mediaTime += (now - clock.readAt) / 1000;
+			clock.readAt = now;
+			return clock.mediaTime;
+		};
+		Object.defineProperty(video, "currentTime", {
+			get: read,
+			configurable: true,
+		});
+		return (frozen: boolean) => {
+			read();
+			clock.frozen = frozen;
+		};
+	}
+
+	function setAdContext(active: boolean) {
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			CurrentAdMediaKey: active ? "live:testchannel" : null,
+			CurrentAdChannel: active ? "testchannel" : null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 1000000 },
+			},
+		});
+	}
+
+	function rebufferLogs() {
+		return vi
+			.mocked(g._log)
+			.mock.calls.filter(([message]) =>
+				String(message).startsWith("[Break] rebuffering"),
+			);
+	}
+
+	beforeEach(() => {
+		run("_resetAdRebufferState");
+	});
+
+	it("reports a stall during the break once the ad context ends", async () => {
+		const playback = makePlayback();
+		const setFrozen = controlClock(playback.video);
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		setAdContext(true);
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(3000);
+		setFrozen(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		setFrozen(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(rebufferLogs()).toEqual([]);
+		setAdContext(false);
+		await vi.advanceTimersByTimeAsync(600);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: 1 stall, 2.0s total over 7.8s visible (at 3.0s for 2.0s)",
+				"warning",
+			],
+		]);
+	});
+
+	it("leaves hidden and paused time out of the summary", async () => {
+		const playback = makePlayback();
+		const setFrozen = controlClock(playback.video);
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		const hidden = vi.mocked(g._isNativeDocumentHidden);
+		setAdContext(true);
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(2000);
+		hidden.mockReturnValue(true);
+		setFrozen(true);
+		await vi.advanceTimersByTimeAsync(3000);
+		hidden.mockReturnValue(false);
+		setFrozen(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		playback.sample.paused = true;
+		setFrozen(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		playback.sample.paused = false;
+		setFrozen(false);
+		await vi.advanceTimersByTimeAsync(2000);
+		setAdContext(false);
+		await vi.advanceTimersByTimeAsync(600);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: none over 3.6s visible",
+				"info",
+			],
+		]);
+	});
+
+	it("keeps measuring a hidden page while its picture-in-picture video plays the break", async () => {
+		const playback = makePlayback();
+		const setFrozen = controlClock(playback.video);
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		vi.spyOn(g, "_getActivePictureInPicturePlaybackContext").mockReturnValue({
+			MediaKey: "live:testchannel",
+			element: playback.video,
+		});
+		vi.mocked(g._isNativeDocumentHidden).mockReturnValue(true);
+		setAdContext(true);
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(2000);
+		setFrozen(true);
+		await vi.advanceTimersByTimeAsync(1500);
+		setFrozen(false);
+		await vi.advanceTimersByTimeAsync(6500);
+		setAdContext(false);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: 1 stall, 1.5s total over 10.0s visible (at 3.5s for 1.5s)",
+				"warning",
+			],
+		]);
+	});
+
+	function makeSampledVideo() {
+		const video = document.createElement("video");
+		document.body.append(video);
+		const media = { time: 0, playing: true };
+		Object.defineProperties(video, {
+			currentTime: { get: () => media.time, configurable: true },
+			paused: { value: false, configurable: true },
+			readyState: { value: 4, configurable: true },
+		});
+		vi.spyOn(g, "_getPlaybackMediaElementForContext").mockReturnValue(video);
+		const tick = (afterBreak: boolean) => {
+			vi.advanceTimersByTime(500);
+			if (media.playing) media.time += 0.5;
+			if (afterBreak) run("_sampleAdRebufferingAfterBreak", false, false);
+			else run("_sampleAdRebuffering", video, "live:testchannel", 1000000);
+		};
+		return { media, tick };
+	}
+
+	function startTransaction(cycleStartedAt: number) {
+		Object.assign(g._PostAdRecoveryTransactionState as object, {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt,
+			expiresAt: Date.now() + 30000,
+		});
+	}
+
+	it("keeps measuring the return to the stream until post-ad recovery ends", () => {
+		const { media, tick } = makeSampledVideo();
+		run("_sampleAdRebuffering", null, "live:testchannel", 1000000);
+		for (let index = 0; index < 4; index++) tick(false);
+		startTransaction(1000000);
+		tick(true);
+		media.playing = false;
+		for (let index = 0; index < 4; index++) tick(true);
+		media.playing = true;
+		tick(true);
+		tick(true);
+		expect(rebufferLogs()).toEqual([]);
+		run("_resetPostAdRecoveryTransaction");
+		run("_sampleAdRebufferingAfterBreak", false, false);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: 1 stall, 2.0s total over 5.0s visible (at 2.5s for 2.0s)",
+				"warning",
+			],
+		]);
+	});
+
+	it("counts a stall on the return to the stream through the buffer monitor", async () => {
+		const playback = makePlayback();
+		const setFrozen = controlClock(playback.video);
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		vi.spyOn(g, "_isPostAdRecoveryTransactionCurrent").mockImplementation(() =>
+			Boolean(
+				(g._PostAdRecoveryTransactionState as { mediaKey: unknown }).mediaKey,
+			),
+		);
+		vi.spyOn(
+			g,
+			"_maintainPostAdRecoveryTransactionLifetime",
+		).mockImplementation(() =>
+			Boolean(
+				(g._PostAdRecoveryTransactionState as { mediaKey: unknown }).mediaKey,
+			),
+		);
+		vi.spyOn(g, "_handlePendingPostAdRecovery").mockReturnValue(false);
+		setAdContext(true);
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(3000);
+		startTransaction(1000000);
+		setAdContext(false);
+		await vi.advanceTimersByTimeAsync(1200);
+		setFrozen(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		setFrozen(false);
+		await vi.advanceTimersByTimeAsync(1200);
+		expect(rebufferLogs()).toEqual([]);
+		run("_resetPostAdRecoveryTransaction");
+		await vi.advanceTimersByTimeAsync(600);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: 1 stall, 2.0s total over 7.2s visible (at 4.2s for 2.0s)",
+				"warning",
+			],
+		]);
+	});
+
+	it.each([
+		["no post-ad recovery", null],
+		["post-ad recovery for another cycle", 990000],
+		["expired post-ad recovery", 1000000],
+	])("reports the break as soon as it ends with %s", (_case, cycle) => {
+		const { tick } = makeSampledVideo();
+		run("_sampleAdRebuffering", null, "live:testchannel", 1000000);
+		tick(false);
+		tick(false);
+		if (cycle) startTransaction(cycle);
+		if (_case.startsWith("expired")) vi.advanceTimersByTime(30001);
+		run("_sampleAdRebufferingAfterBreak", false, false);
+		expect(rebufferLogs()).toHaveLength(1);
+		expect(rebufferLogs()[0][1]).toBe("info");
+	});
+
+	it("lists at most eight stalls and reports the previous break when a new cycle starts", () => {
+		const video = document.createElement("video");
+		document.body.append(video);
+		let mediaTime = 0;
+		Object.defineProperties(video, {
+			currentTime: { get: () => mediaTime, configurable: true },
+			paused: { value: false, configurable: true },
+			readyState: { value: 4, configurable: true },
+		});
+		const sample = (advanceMs: number, playing: boolean) => {
+			vi.advanceTimersByTime(advanceMs);
+			if (playing) mediaTime += advanceMs / 1000;
+			run("_sampleAdRebuffering", video, "live:testchannel", 1000000);
+		};
+		run("_sampleAdRebuffering", video, "live:testchannel", 1000000);
+		for (let stall = 0; stall < 10; stall++) {
+			sample(500, true);
+			sample(500, true);
+			sample(500, false);
+			sample(500, false);
+		}
+		sample(500, true);
+		expect(rebufferLogs()).toEqual([]);
+		run("_sampleAdRebuffering", video, "live:testchannel", 1060000);
+		expect(rebufferLogs()).toEqual([
+			[
+				"[Break] rebuffering live:testchannel cycle 1000000: 10 stalls, 10.0s total over 20.5s visible (at 1.0s for 1.0s, 3.0s for 1.0s, 5.0s for 1.0s, 7.0s for 1.0s, 9.0s for 1.0s, 11.0s for 1.0s, 13.0s for 1.0s, 15.0s for 1.0s, +2 more)",
+				"warning",
+			],
+		]);
+	});
+});
