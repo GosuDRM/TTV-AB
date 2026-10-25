@@ -74,6 +74,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v25.0.2 - 2026-10-26
+
+- **Ad Break Buffering Diagnostics** - Record in debug logs how often and when the stream buffers during each ad break and while it returns to the stream, to help track down buffering during some ad breaks.
+
 ### v25.0.1 - 2026-10-24
 
 - **Player Stopping After Some Ad Breaks** - Accept the stream when Twitch renumbers it after an ad break, instead of rejecting it until the player stopped with a network error. ([#96](https://github.com/GosuDRM/TTV-AB/issues/96))
@@ -113,25 +117,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Debug Log Errors During Recovery** - Stop logging cancelled stream requests as errors while TTV AB protects playback after its player recovery runs out, so Generate Log keeps the real errors and ad break history.
 - **Quieter Debug Log During Ad Breaks** - Log a missing fresh backup or an ad break with nothing left to play once per ad break instead of every few seconds, and log a failed backup lookup as a warning instead of an error, so Generate Log keeps more of the ad break history.
 - **Escape on the Debug Log Page** - Stop pressing Escape on the debug log page from causing an error.
-
-### v24.0.2 - 2026-10-22
-
-- **Older Chromium Browsers** - Block installation in Chrome, Edge, and other Chromium-based browsers older than version 111, where ads cannot be blocked. It used to install there and look like it was working.
-- **Yandex Browser in Reports** - Name Yandex Browser in debug logs and new bug reports instead of listing it as Chromium.
-- **Pop-ups in Embedded Players** - Show the welcome message and achievement pop-ups only on Twitch itself, not inside Twitch players embedded on other websites, where they covered most of the video.
-- **Refresh Notice in Fullscreen** - Show the refresh notice over the fullscreen player and start its 3-second countdown only once you can see it. Before, it stayed hidden behind fullscreen video and could disappear unseen.
-- **Log Export Tab Message** - Stop showing "Could not open the log export tab" when the tab did open, in browsers where it has to be opened without the extension tabs API.
-- **Language on Twitch** - Show the refresh notice and pop-ups on Twitch in the language you picked in the popup, instead of your browser's website language. In Auto mode they now pick the same language as the popup.
-- **Simplified Chinese in Hong Kong and Macau** - Use Simplified Chinese when your browser asks for it with a Hong Kong or Macau region, instead of switching to Traditional Chinese.
-- **Local Number Formats** - Show Time Saved, watch time, and channel share with your language's units and number style, for example "1 мин 30 с" instead of "1m 30s".
-- **Ad Count in Turbo Mode** - Keep pop-ups on Twitch from showing how many ads were blocked while Turbo Mode is on, so your statistics stay paused and out of view.
-- **Smoother Ad Break Timer** - Count the Ad Break Timer up exactly once per second, hide it within a second of the break ending, and update it right away when you return to the tab or switch fullscreen. It also stays visible while the stream is partly scrolled out of view.
-- **Translation Wording** - Fix awkward or inconsistent wording in Chinese, French, German, Italian, Japanese, Korean, Portuguese, Russian, Spanish, and Ukrainian, including the store descriptions in French, German, Russian, and Ukrainian, and use the terms Twitch uses in Taiwan for Traditional Chinese.
-- **Smaller Download** - Leave the readme, changelog, and documentation images out of the extension package, cutting its download size roughly in half.
-- **Release Safety Checks** - Stop a release build when store text is too long, the popup points at missing files, page code could insert unsafe HTML or open links without isolation, or the package would include stray or system files, so these mistakes cannot reach a published version. The Firefox source archive now contains only files tracked in the repository.
-- **Translated Pop-ups** - Translate the welcome message, achievement pop-ups, and Ad Break Timer into all 12 supported languages, using the same achievement names as the popup.
-- **Clearer Language Menu** - Show which language Auto picked, and show the Brazilian flag for Portuguese to match its Brazilian translation.
-- **Turbo Mode Explanation** - Add an info button next to Turbo Mode that explains what it pauses and that ad blocking keeps working.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
