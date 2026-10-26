@@ -265,6 +265,46 @@ describe("_collectPageLogEntries", () => {
 		);
 	});
 
+	it("keeps trimmed and skipped milestones within the bridge's 3000-entry limit", () => {
+		g._captureIndependentVideoAdDiagnostics = () => {};
+		g.__TTVAB_LOGS_DROPPED__ = 600;
+		g.__TTVAB_LOG_MILESTONES__ = [
+			{ t: 1, l: "info", m: "Ad detected, blocking..." },
+			{ t: 2, l: "error", m: "Worker #g1 error: broken" },
+		];
+		g.__TTVAB_LOGS__ = Array.from({ length: 3200 }, (_, index) => ({
+			t: index + 1,
+			l: index === 100 ? "error" : "info",
+			m:
+				index === 10
+					? "[Break] ended live:test cycle 2: hold @0.0s"
+					: `entry ${index}`,
+		}));
+		try {
+			const result = T<
+				() => {
+					entries: Array<{ t: number; m: string }>;
+					truncatedEntries: number;
+				}
+			>("_collectPageLogEntries")();
+			expect(result.entries).toHaveLength(3000);
+			expect(result.entries.slice(0, 6).map((entry) => entry.m)).toEqual([
+				"Ad detected, blocking...",
+				"Worker #g1 error: broken",
+				"[Log] 600 older entries were trimmed from this tab's log; 2 error and ad break milestones from them are kept above",
+				"[Break] ended live:test cycle 2: hold @0.0s",
+				"entry 100",
+				"entry 205",
+			]);
+			expect(result.entries[2].t).toBe(11);
+			expect(result.entries.at(-1)?.m).toBe("entry 3199");
+			expect(result.truncatedEntries).toBe(203);
+		} finally {
+			delete g.__TTVAB_LOGS_DROPPED__;
+			delete g.__TTVAB_LOG_MILESTONES__;
+		}
+	});
+
 	it("takes a live independent-video snapshot before exporting the buffer", () => {
 		g._captureIndependentVideoAdDiagnostics = () => {
 			(g.__TTVAB_LOGS__ as unknown[]).push({
@@ -910,6 +950,40 @@ describe("restored ads count", () => {
 	});
 });
 
+describe("_bootstrap", () => {
+	const scopedWindow = window as unknown as Record<string, unknown>;
+	let savedC: unknown;
+	let savedLog: unknown;
+
+	beforeEach(() => {
+		savedC = g._C;
+		savedLog = g._log;
+		g._C = { VERSION: "2.0.0", INTERNAL_VERSION: 20000 };
+		g._log = () => {};
+		history.replaceState(null, "", "/somechannel");
+		delete scopedWindow.ttvabVersion;
+	});
+
+	afterEach(() => {
+		g._C = savedC;
+		g._log = savedLog;
+		delete scopedWindow.ttvabVersion;
+	});
+
+	it("initializes once per document", () => {
+		const bootstrap = T<() => boolean>("_bootstrap");
+		expect(bootstrap()).toBe(true);
+		expect(scopedWindow.ttvabVersion).toBe(20000);
+		expect(bootstrap()).toBe(false);
+	});
+
+	it("leaves an already running newer version in place", () => {
+		scopedWindow.ttvabVersion = 30000;
+		expect(T<() => boolean>("_bootstrap")()).toBe(false);
+		expect(scopedWindow.ttvabVersion).toBe(30000);
+	});
+});
+
 describe("_forwardPreviewFailureDiagnostics", () => {
 	const saved: Record<string, unknown> = {};
 	const names = [
@@ -958,5 +1032,38 @@ describe("_forwardPreviewFailureDiagnostics", () => {
 		expect(entries).toHaveLength(64);
 		expect(entries.at(-1)?.m).toBe("entry 199");
 		expect(sent[0].truncatedEntries).toBe(136);
+	});
+
+	it("leaves trimmed history out of the preview snapshot", () => {
+		const sent: Array<Record<string, unknown>> = [];
+		g._getStructuredMessageData = (value: unknown) => value;
+		g._isPreviewsPlayerUrl = () => true;
+		g._normalizeMediaKey = (value: unknown) => value;
+		g._captureIndependentVideoAdDiagnostics = () => {};
+		g._sendBridgeMessage = (_type: string, detail: Record<string, unknown>) =>
+			sent.push(detail);
+		g.__TTVAB_STATE__ = { PageMediaKey: "live:somechannel" };
+		g.__TTVAB_LOGS_DROPPED__ = 50;
+		g.__TTVAB_LOG_MILESTONES__ = [
+			{ t: 1, l: "error", m: "Worker #g1 error: broken" },
+		];
+		globalThis.__TTVAB_LOGS__ = Array.from({ length: 200 }, (_, index) => ({
+			t: index + 2,
+			l: "info",
+			m: `entry ${index}`,
+		}));
+		try {
+			T<(value: unknown) => boolean>("_forwardPreviewFailureDiagnostics")({
+				mediaKey: "live:somechannel",
+				reason: "retry-failed",
+			});
+			const entries = sent[0].entries as Array<{ m: string }>;
+			expect(entries).toHaveLength(64);
+			expect(entries[0]?.m).toBe("entry 136");
+			expect(sent[0].truncatedEntries).toBe(136);
+		} finally {
+			delete g.__TTVAB_LOGS_DROPPED__;
+			delete g.__TTVAB_LOG_MILESTONES__;
+		}
 	});
 });

@@ -142,10 +142,15 @@ function _recordWorkerFailureDiagnostic(
 				previous?.wasmFrames ||
 				[],
 		};
+		const addsFailureDetail =
+			!previous ||
+			(["source", "line", "column", "stack"] as const).some(
+				(key) => !previous[key] && detail[key],
+			);
 		if (previous) Object.assign(previous, detail);
 		else _workerFailureDiagnostics.push(detail);
 		if (_workerFailureDiagnostics.length > 8) _workerFailureDiagnostics.shift();
-		_checkpointPageDiagnostics(true);
+		_checkpointPageDiagnostics(addsFailureDetail);
 	} catch {}
 }
 
@@ -233,6 +238,7 @@ function _collectPageLogEntries(
 	maxBytes = _PAGE_LOG_EXPORT_MAX_BYTES,
 	captureMediaDiagnostics = true,
 	retainRecoveryMilestones = false,
+	includeEarlierMilestones = !retainRecoveryMilestones,
 ) {
 	try {
 		if (
@@ -263,33 +269,95 @@ function _collectPageLogEntries(
 			length = observedLength;
 		}
 	} catch {}
+	const earlierEntries: PlainObject[] = [];
+	let trimNote: PlainObject | null = null;
+	let usedBytes = 2;
+	if (includeEarlierMilestones) {
+		const droppedEntries = Math.max(
+			0,
+			Math.trunc(_getSafePageLogNumber(globalThis.__TTVAB_LOGS_DROPPED__, 0)),
+		);
+		const earlierLimit = Math.max(0, maxEntries - 1);
+		try {
+			const trimmedMilestones = Array.isArray(
+				globalThis.__TTVAB_LOG_MILESTONES__,
+			)
+				? globalThis.__TTVAB_LOG_MILESTONES__.slice(-40)
+				: [];
+			for (const source of trimmedMilestones) {
+				if (earlierEntries.length >= earlierLimit - 1) break;
+				if (!source || typeof source !== "object" || Array.isArray(source))
+					continue;
+				const entry = _toPageLogExportEntry(source);
+				const entryBytes = _getPageLogEntryByteLength(entry);
+				if (usedBytes + entryBytes > maxBytes) break;
+				earlierEntries.push(entry);
+				usedBytes += entryBytes;
+			}
+		} catch {}
+		if (droppedEntries > 0 && earlierEntries.length < earlierLimit) {
+			trimNote = {
+				t: 0,
+				l: "info",
+				m: `[Log] ${droppedEntries} older entries were trimmed from this tab's log${earlierEntries.length > 0 ? `; ${earlierEntries.length} error and ad break milestones from them are kept above` : ""}`,
+			};
+			usedBytes += _getPageLogEntryByteLength({
+				...trimNote,
+				t: 8640000000000000,
+			});
+			earlierEntries.push(trimNote);
+		}
+	}
+	const entryLimit = Math.max(0, maxEntries - earlierEntries.length);
+	const keepsSkippedMilestones =
+		includeEarlierMilestones && !retainRecoveryMilestones;
 	const entries: PlainObject[] = [];
 	const milestones = new Set<PlainObject>();
-	let usedBytes = 2;
+	let skippedMilestones = 0;
+	let skipsBufferedEntries = false;
 	const oldestIndex = Math.max(0, length - 3600);
 	for (let index = length - 1; index >= oldestIndex; index -= 1) {
-		if (entries.length >= maxEntries && !retainRecoveryMilestones) break;
+		if (entries.length >= entryLimit) {
+			if (!retainRecoveryMilestones && !keepsSkippedMilestones) break;
+			skipsBufferedEntries = true;
+		}
 		try {
 			const source = buffer[index];
 			if (!source || typeof source !== "object" || Array.isArray(source)) {
 				continue;
 			}
 			const isMilestone = Boolean(
-				retainRecoveryMilestones &&
-					milestones.size < 12 &&
-					((typeof source.m === "string" &&
-						/Ad blocked!|Ad detected, blocking|Using backup:|Native playlist (?:verified clean|ready)|Native playback restored|Post-ad recovery reached|Player still stalling after ad|Player source reload failed/.test(
-							source.m.slice(0, 4000),
-						)) ||
-						_isPageLogMilestone(source)),
+				retainRecoveryMilestones
+					? milestones.size < 12 &&
+							((typeof source.m === "string" &&
+								/Ad blocked!|Ad detected, blocking|Using backup:|Native playlist (?:verified clean|ready)|Native playback restored|Post-ad recovery reached|Player still stalling after ad|Player source reload failed/.test(
+									source.m.slice(0, 4000),
+								)) ||
+								_isPageLogMilestone(source))
+					: keepsSkippedMilestones &&
+							skippedMilestones < 40 &&
+							_isPageLogMilestone(source),
 			);
-			if (entries.length >= maxEntries && !isMilestone) continue;
+			if (
+				!isMilestone &&
+				(entries.length >= entryLimit ||
+					(keepsSkippedMilestones && skipsBufferedEntries))
+			)
+				continue;
 			const entry = _toPageLogExportEntry(source);
 			const entryBytes = _getPageLogEntryByteLength(entry);
-			if (retainRecoveryMilestones && entryBytes + 2 > maxBytes) continue;
-			if (retainRecoveryMilestones && isMilestone) {
+			if (
+				(retainRecoveryMilestones || isMilestone) &&
+				entryBytes + 2 > maxBytes
+			)
+				continue;
+			if (
+				isMilestone &&
+				(entries.length >= entryLimit || usedBytes + entryBytes > maxBytes)
+			) {
+				skipsBufferedEntries = true;
 				while (
-					entries.length >= maxEntries ||
+					entries.length >= entryLimit ||
 					usedBytes + entryBytes > maxBytes
 				) {
 					let removableIndex = entries.length - 1;
@@ -302,51 +370,31 @@ function _collectPageLogEntries(
 			}
 			if (entries.length > 0 && usedBytes + entryBytes > maxBytes) {
 				if (retainRecoveryMilestones) continue;
+				if (keepsSkippedMilestones) {
+					skipsBufferedEntries = true;
+					continue;
+				}
 				break;
 			}
 			if (
-				retainRecoveryMilestones &&
-				(entries.length >= maxEntries || usedBytes + entryBytes > maxBytes)
+				(retainRecoveryMilestones || isMilestone) &&
+				(entries.length >= entryLimit || usedBytes + entryBytes > maxBytes)
 			)
 				continue;
 			entries.push(entry);
-			if (isMilestone) milestones.add(entry);
+			if (isMilestone) {
+				milestones.add(entry);
+				if (skipsBufferedEntries) skippedMilestones += 1;
+			}
 			usedBytes += entryBytes;
 		} catch {}
 	}
 	entries.reverse();
 	const bufferedEntries = entries.length;
-	if (!retainRecoveryMilestones) {
-		const droppedEntries = Math.max(
-			0,
-			Math.trunc(_getSafePageLogNumber(globalThis.__TTVAB_LOGS_DROPPED__, 0)),
-		);
-		const earlierEntries: PlainObject[] = [];
-		try {
-			const trimmedMilestones = Array.isArray(
-				globalThis.__TTVAB_LOG_MILESTONES__,
-			)
-				? globalThis.__TTVAB_LOG_MILESTONES__.slice(-40)
-				: [];
-			for (const source of trimmedMilestones) {
-				if (!source || typeof source !== "object" || Array.isArray(source))
-					continue;
-				const entry = _toPageLogExportEntry(source);
-				const entryBytes = _getPageLogEntryByteLength(entry);
-				if (usedBytes + entryBytes > maxBytes) break;
-				earlierEntries.push(entry);
-				usedBytes += entryBytes;
-			}
-		} catch {}
-		if (droppedEntries > 0) {
-			earlierEntries.push({
-				t: Number(entries[0]?.t ?? earlierEntries.at(-1)?.t) || 0,
-				l: "info",
-				m: `[Log] ${droppedEntries} older entries were trimmed from this tab's log${earlierEntries.length > 0 ? `; ${earlierEntries.length} error and ad break milestones from them are kept above` : ""}`,
-			});
-		}
-		entries.unshift(...earlierEntries);
+	if (trimNote) {
+		trimNote.t = Number(entries[0]?.t ?? earlierEntries.at(-2)?.t) || 0;
 	}
+	entries.unshift(...earlierEntries);
 
 	return {
 		entries,
@@ -712,30 +760,34 @@ function _collectWorkerRecoveryDiagnostics(state) {
 }
 
 function _collectPostAdRecoveryDiagnostics() {
-	if (
-		typeof _PostAdRecoveryDiagnostics === "undefined" ||
-		_PostAdRecoveryDiagnostics.mediaKey !== __TTVAB_STATE__?.PageMediaKey ||
-		_PostAdRecoveryDiagnostics.pageGeneration !==
-			Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0)
-	)
+	try {
+		if (
+			typeof _PostAdRecoveryDiagnostics === "undefined" ||
+			_PostAdRecoveryDiagnostics.mediaKey !== __TTVAB_STATE__?.PageMediaKey ||
+			_PostAdRecoveryDiagnostics.pageGeneration !==
+				Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0)
+		)
+			return null;
+		const transaction = _PostAdRecoveryTransactionState;
+		return {
+			..._PostAdRecoveryDiagnostics,
+			...(transaction.mediaKey === _PostAdRecoveryDiagnostics.mediaKey &&
+			transaction.cycleStartedAt === _PostAdRecoveryDiagnostics.cycleStartedAt
+				? {
+						reloadRequestCount: transaction.reloadRequestCount,
+						acceptedReloadCount: transaction.acceptedReloadCount,
+						reloadAt: transaction.requiredNativeReloadAt,
+						nativeReadyAt: transaction.nativeReloadConfirmedAt,
+						expiresAt: transaction.expiresAt,
+						currentTime: transaction.lastCurrentTime,
+						totalVideoFrames: transaction.lastTotalFrames,
+						..._getPostAdRecoveryPlaybackDiagnostics(),
+					}
+				: {}),
+		};
+	} catch {
 		return null;
-	const transaction = _PostAdRecoveryTransactionState;
-	return {
-		..._PostAdRecoveryDiagnostics,
-		...(transaction.mediaKey === _PostAdRecoveryDiagnostics.mediaKey &&
-		transaction.cycleStartedAt === _PostAdRecoveryDiagnostics.cycleStartedAt
-			? {
-					reloadRequestCount: transaction.reloadRequestCount,
-					acceptedReloadCount: transaction.acceptedReloadCount,
-					reloadAt: transaction.requiredNativeReloadAt,
-					nativeReadyAt: transaction.nativeReloadConfirmedAt,
-					expiresAt: transaction.expiresAt,
-					currentTime: transaction.lastCurrentTime,
-					totalVideoFrames: transaction.lastTotalFrames,
-					..._getPostAdRecoveryPlaybackDiagnostics(),
-				}
-			: {}),
-	};
+	}
 }
 
 function _forwardPreviewFailureDiagnostics(value) {
@@ -757,11 +809,8 @@ function _forwardPreviewFailureDiagnostics(value) {
 			_PREVIEW_FAILURE_LOG_MAX_ENTRIES,
 			_PAGE_LOG_EXPORT_MAX_BYTES,
 			false,
-		);
-		const entries = collected.entries.slice(-_PREVIEW_FAILURE_LOG_MAX_ENTRIES);
-		const omittedEntries = Math.max(
-			0,
-			collected.entries.length - entries.length,
+			false,
+			false,
 		);
 		const rawReportedAt = _getSafePageLogNumber(detail.reportedAt, Date.now());
 		const reportedAt =
@@ -776,11 +825,11 @@ function _forwardPreviewFailureDiagnostics(value) {
 			reason: _getSafePageLogString(detail.reason, 48).replace(/\n/g, ""),
 			reportedAt,
 			status,
-			entries,
+			entries: collected.entries,
 			context: _collectPageLogContext(),
 			truncatedEntries: Math.min(
 				1000000,
-				Math.max(0, collected.truncatedEntries) + omittedEntries,
+				Math.max(0, collected.truncatedEntries),
 			),
 		});
 		return true;
@@ -1028,7 +1077,6 @@ function _init() {
 		if (isFirstRestore) _log(`Restored ads count: ${_S.adsBlocked}`, "info");
 	});
 
-	_syncStoredDeviceId();
 	if (typeof _hookRevokeObjectURL === "function") {
 		_hookRevokeObjectURL();
 	}

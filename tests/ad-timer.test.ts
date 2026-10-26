@@ -493,3 +493,56 @@ describe("Low Quality Fallback toggle log", () => {
 		});
 	});
 });
+
+describe("ad blocking master toggle", () => {
+	it("releases page ad ownership and resets workers when turned off", () => {
+		const state = g.__TTVAB_STATE__ as unknown as Record<string, unknown>;
+		Object.assign(state, {
+			CurrentAdChannel: "example",
+			PinnedBackupPlayerType: "autoplay",
+			PinnedBackupPlayerChannel: "example",
+			PinnedBackupPlayerMediaKey: "live:example",
+			ActiveCodecHandoffId: "handoff-1",
+			ActiveCodecHandoffChannel: "example",
+			ActiveCodecHandoffMediaKey: "live:example",
+			HasTriggeredPlayerReload: true,
+			PendingTriggeredPlayerReloadMediaKey: "live:example",
+			PendingTriggeredPlayerReloadAt: now - 1000,
+			LastAdEndedAt: now - 2000,
+			LastAdEndedMediaKey: "live:example",
+			LastAdEndedCycleStartedAt: now - 83000,
+			BackupSearchForceRefreshAt: now - 500,
+		});
+
+		handlers.get("ttvab-toggle")?.({ enabled: false });
+
+		expect(state).toMatchObject({
+			IsAdStrippingEnabled: false,
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			PinnedBackupPlayerType: null,
+			PinnedBackupPlayerChannel: null,
+			PinnedBackupPlayerMediaKey: null,
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			HasTriggeredPlayerReload: false,
+			PendingTriggeredPlayerReloadMediaKey: null,
+			PendingTriggeredPlayerReloadAt: 0,
+			LastAdEndedAt: 0,
+			LastAdEndedMediaKey: null,
+			LastAdEndedCycleStartedAt: 0,
+			BackupSearchForceRefreshAt: 0,
+			AdPodProgressByMediaKey: {},
+		});
+		expect(g._broadcastWorkers.mock.calls.map(([message]) => message)).toEqual([
+			{ key: "UpdateToggleState", value: false },
+			{
+				key: "ResetPlaybackRecoveryState",
+				value: { clearAdContext: true },
+			},
+			{ key: "UpdateCurrentAdContext", value: null },
+			{ key: "UpdatePinnedBackupPlayerContext", value: null },
+		]);
+	});
+});

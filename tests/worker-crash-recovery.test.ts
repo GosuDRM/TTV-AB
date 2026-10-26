@@ -359,6 +359,38 @@ describe("manual refresh after bounded post-ad recovery", () => {
 		state().PagePlaybackContextGeneration = 3;
 		expect(T<() => unknown>("_collectPostAdRecoveryDiagnostics")()).toBeNull();
 	});
+
+	it("keeps the rest of the log context when post-ad playback diagnostics throw", () => {
+		expire();
+		const transaction = g._PostAdRecoveryTransactionState as Record<
+			string,
+			unknown
+		>;
+		const savedOwner = {
+			mediaKey: transaction.mediaKey,
+			cycleStartedAt: transaction.cycleStartedAt,
+		};
+		Object.assign(transaction, {
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 50000,
+		});
+		const playback = vi
+			.spyOn(g, "_getPostAdRecoveryPlaybackDiagnostics")
+			.mockImplementation(() => {
+				throw new Error("detached video");
+			});
+		try {
+			const context = T<() => Record<string, unknown> | null>(
+				"_collectPageLogContext",
+			)();
+			expect(playback).toHaveBeenCalled();
+			expect(context).not.toBeNull();
+			expect(context?.recovery).toBeNull();
+			expect(context?.pageMediaKey).toBe("live:testchannel");
+		} finally {
+			Object.assign(transaction, savedOwner);
+		}
+	});
 });
 
 describe("worker recovery in the page log", () => {
@@ -708,6 +740,38 @@ describe("worker failure evidence survives retirement", () => {
 		]);
 		expect(JSON.stringify(snapshot.workerFailures)).not.toContain("secret");
 		expect(g._checkpointPageDiagnostics).toHaveBeenCalledWith(true);
+	});
+
+	it("forces a checkpoint only when a failure adds new evidence", () => {
+		const record = T<
+			(
+				worker: unknown,
+				context: unknown,
+				message: string,
+				error?: unknown,
+			) => void
+		>("_recordWorkerFailureDiagnostic");
+		const worker = { __TTVABGeneration: 11 };
+		const context = { MediaKey: "live:route" };
+		const details = {
+			filename: "https://example.com/worker.js",
+			lineno: 3,
+			colno: 4,
+			error: { stack: "run@wasm-function[1]:0x2" },
+		};
+		record(worker, context, "Worker #g11 error: index out of bounds");
+		for (let index = 0; index < 5; index++)
+			record(worker, context, "index out of bounds");
+		record(worker, context, "index out of bounds", details);
+		record(worker, context, "index out of bounds", details);
+		expect(
+			(g._checkpointPageDiagnostics as ReturnType<typeof vi.fn>).mock.calls.map(
+				([force]) => force,
+			),
+		).toEqual([true, false, false, false, false, false, true, false]);
+		expect(g._workerFailureDiagnostics).toEqual([
+			expect.objectContaining({ generation: 11, line: 3, column: 4 }),
+		]);
 	});
 
 	it("bounds retained failures after many retired workers", () => {
