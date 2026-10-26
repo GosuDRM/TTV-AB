@@ -74,6 +74,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v25.0.4 - 2026-10-26
+
+- **Client-Side Ad Request Details** - Record in debug logs the format of each client-side ad request, whether it came from the home page, and whether Twitch's ad server answered or the request was stopped first.
+
 ### v25.0.3 - 2026-10-26
 
 - **Client-Side Ad Diagnostics** - Record in debug logs when Twitch announces or requests an ad that plays as a separate video beside the stream, and when an unrecognized video starts playing next to it, so any change in how Twitch delivers these ads shows up in logs. ([#98](https://github.com/GosuDRM/TTV-AB/issues/98))
@@ -86,11 +90,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Repeated Player Errors** - Save a diagnostic snapshot when a player error adds new details, instead of on every repeat of the same error.
 - **Generate Log During Ad Recovery** - Keep a tab's playback details in Generate Log when its post-ad recovery details cannot be read, instead of leaving all of them out.
 - **Ad Break Buffering Diagnostics** - Record in debug logs how often and when the stream buffers during each ad break and while it returns to the stream, to help track down buffering during some ad breaks.
-
-### v25.0.1 - 2026-10-24
-
-- **Player Stopping After Some Ad Breaks** - Accept the stream when Twitch renumbers it after an ad break, instead of rejecting it until the player stopped with a network error. ([#96](https://github.com/GosuDRM/TTV-AB/issues/96))
-- **Black Screen Diagnostics** - Record in debug logs when the stream's timing runs ahead of your clock, to help track down a black screen during some ad breaks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

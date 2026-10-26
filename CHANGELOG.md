@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [25.0.4] - 2026-10-26
+
+Changed
+
+- **Client-Side Ad Request Details** - Record in debug logs the format of each client-side ad request, whether it came from the home page, and whether Twitch's ad server answered or the request was stopped first.
+
 ## [25.0.3] - 2026-10-26
 
 Added
