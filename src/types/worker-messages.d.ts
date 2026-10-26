@@ -198,7 +198,7 @@ type TTVABWorkerEventPayloads = {
 	};
 	AdEnded: { endedAt?: number; holdingBackup?: boolean };
 	BackupPlayerTypeSelected: { value: string | null };
-	LiveStreamStatus: { ended: boolean; observedAt?: number };
+	LiveStreamStatus: { ended: boolean; observedAt?: number; mediaKey: string };
 	FatalMediaRecoveryReady: {
 		recoveryId: string;
 		verifiedAt?: number;

@@ -82,7 +82,11 @@ const eventPayloads = {
 	},
 	AdEnded: { endedAt: 2000, holdingBackup: true },
 	BackupPlayerTypeSelected: { value: "site" },
-	LiveStreamStatus: { ended: true, observedAt: 2000 },
+	LiveStreamStatus: {
+		ended: true,
+		observedAt: 2000,
+		mediaKey: "live:buildtest",
+	},
 	FatalMediaRecoveryReady: {
 		recoveryId: "recovery-1000",
 		verifiedAt: 1200,
@@ -492,6 +496,7 @@ __TTVAB_STATE__.PendingFetchRequests.get("fetch-1")?.resolve({ id: "fetch-1", bo
 void __TTVAB_STATE__.PrepareFatalMediaRecovery?.({ recoveryId: "recovery-1", mediaKey: "live:buildtest", cycleStartedAt: 1000 });
 __TTVAB_STATE__.StreamInfos["live:buildtest"] = _createStreamInfo({ mediaKey: "live:buildtest" });
 const _runtimeStateHasNoIndex: string extends keyof TTVABRuntimeState ? false : true = true;
+const _windowHasNoIndex: string extends keyof Window ? false : true = true;
 function _contractNarrowing(command: TTVABWorkerCommand, seed: TTVABWorkerSeed) {
     if (command.key === "UpdateToggleState") { const enabled: boolean = command.value; seed.state.IsAdStrippingEnabled = enabled; }
     if (command.key === "UpdatePageContext") { const mediaKey: string | null = command.value.mediaKey; seed.state.PageMediaKey = mediaKey; }
