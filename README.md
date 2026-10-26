@@ -76,6 +76,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ### v25.0.2 - 2026-10-26
 
+- **Streams Already Playing When You Install** - Restart the player once, without refreshing the tab, so ads are blocked on a stream that was already playing when you installed the extension. In Chrome, the extension now also starts in Twitch tabs that were already open. If the restart does not take effect, the refresh prompt still appears.
+- **Welcome Message in Background Tabs** - Show the welcome message once the Twitch tab is visible, instead of showing and hiding it while you were on another tab.
+- **Generate Log in Long Sessions** - Keep the error and ad break entries saved from trimmed history in Generate Log, instead of dropping them once a long session filled the log.
+- **Repeated Player Errors** - Save a diagnostic snapshot when a player error adds new details, instead of on every repeat of the same error.
+- **Generate Log During Ad Recovery** - Keep a tab's playback details in Generate Log when its post-ad recovery details cannot be read, instead of leaving all of them out.
 - **Ad Break Buffering Diagnostics** - Record in debug logs how often and when the stream buffers during each ad break and while it returns to the stream, to help track down buffering during some ad breaks.
 
 ### v25.0.1 - 2026-10-24
