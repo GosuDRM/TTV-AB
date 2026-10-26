@@ -1891,10 +1891,16 @@ function _hookWorkerFetch() {
 				});
 				return new Response(null, { status: 204, statusText: "No Content" });
 			}
-			_logUnblockedClientSideAdRequest(
+			const clientSideAdRequestLabel = _getClientSideAdRequestLogLabel(
 				url,
 				adRequestMediaKey || playbackRequestOwner.pageMediaKey,
 			);
+			if (clientSideAdRequestLabel) {
+				return await _observeClientSideAdFetch(
+					realFetch.apply(this, args),
+					clientSideAdRequestLabel,
+				);
+			}
 
 			const shouldBlockAdSegments =
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
@@ -7707,23 +7713,38 @@ function _isClientSideAdRequestUrl(parsedUrl: URL) {
 	);
 }
 
-function _logUnblockedClientSideAdRequest(urlStr, mediaKey) {
+function _getClientSideAdRequestLogLabel(urlStr, mediaKey) {
 	try {
-		if (__TTVAB_STATE__?.IsAdStrippingEnabled !== true) return false;
+		if (__TTVAB_STATE__?.IsAdStrippingEnabled !== true) return null;
 		const text = String(urlStr || "");
 		if (!/edge\.ads\.twitch\.tv|vaes\.amazon-adsystem\.com/i.test(text))
-			return false;
+			return null;
 		const parsedUrl = new URL(text);
-		if (!_isClientSideAdRequestUrl(parsedUrl)) return false;
-		const requestedBreak = parsedUrl.searchParams.get("bp") || "";
-		const breakType = /^[a-z_-]{1,24}$/i.test(requestedBreak)
-			? requestedBreak
-			: "unknown";
-		const safeMediaKey = _normalizeMediaKey(mediaKey) || "no media";
+		if (!_isClientSideAdRequestUrl(parsedUrl)) return null;
+		const readParameter = (name, pattern) => {
+			const value = parsedUrl.searchParams.get(name) || "";
+			return pattern.test(value) ? value : null;
+		};
+		const details = [
+			readParameter("bp", /^[a-z_-]{1,24}$/i) || "unknown break",
+			readParameter("afmt", /^[a-z0-9_]{1,40}$/i),
+		]
+			.filter(Boolean)
+			.join(", ");
+		const safeMediaKey = _normalizeMediaKey(mediaKey);
+		const isHomePage =
+			typeof window !== "undefined" &&
+			window.location?.hostname === "www.twitch.tv" &&
+			window.location?.pathname === "/";
+		const where = safeMediaKey
+			? `for ${safeMediaKey}`
+			: isHomePage
+				? "on the home page"
+				: "outside a stream";
 		const target = `${parsedUrl.host}${parsedUrl.pathname}`;
-		const key = `${target}|${breakType}|${safeMediaKey}`;
+		const key = `${target}|${details}|${where}`;
 		const now = Date.now();
-		if (now - (_LoggedClientSideAdRequests.get(key) || 0) < 5000) return false;
+		if (now - (_LoggedClientSideAdRequests.get(key) || 0) < 5000) return null;
 		_LoggedClientSideAdRequests.delete(key);
 		_LoggedClientSideAdRequests.set(key, now);
 		if (_LoggedClientSideAdRequests.size > 16) {
@@ -7731,14 +7752,62 @@ function _logUnblockedClientSideAdRequest(urlStr, mediaKey) {
 				_LoggedClientSideAdRequests.keys().next().value,
 			);
 		}
-		_log(
-			`[CSAI] Twitch requested a client-side ${breakType} ad from ${target} for ${safeMediaKey}; the request was not blocked`,
-			"info",
-		);
-		return true;
+		return `[CSAI] Twitch requested a client-side ad (${details}) from ${target} ${where}`;
 	} catch {
-		return false;
+		return null;
 	}
+}
+
+function _logClientSideAdRequestOutcome(label, outcome) {
+	if (label) _log(`${label}; TTV AB let it through and ${outcome}`, "info");
+}
+
+function _getClientSideAdFailureOutcome(cancelled) {
+	return cancelled
+		? "the page cancelled it"
+		: "it failed before a response (blocked by the browser, another extension, or the network)";
+}
+
+function _observeClientSideAdFetch(responsePromise, label) {
+	if (!label) return responsePromise;
+	responsePromise.then(
+		(response) =>
+			_logClientSideAdRequestOutcome(
+				label,
+				`Twitch's ad server answered with HTTP ${Math.trunc(Number(response?.status) || 0)}`,
+			),
+		(error) =>
+			_logClientSideAdRequestOutcome(
+				label,
+				_getClientSideAdFailureOutcome(error?.name === "AbortError"),
+			),
+	);
+	return responsePromise;
+}
+
+function _observeClientSideAdXhr(xhr, label) {
+	if (!label || typeof xhr?.addEventListener !== "function") return;
+	let cancelled = false;
+	xhr.addEventListener(
+		"abort",
+		() => {
+			cancelled = true;
+		},
+		{ once: true },
+	);
+	xhr.addEventListener(
+		"loadend",
+		() => {
+			const status = Math.trunc(Number(xhr.status) || 0);
+			_logClientSideAdRequestOutcome(
+				label,
+				status > 0
+					? `Twitch's ad server answered with HTTP ${status}`
+					: _getClientSideAdFailureOutcome(cancelled),
+			);
+		},
+		{ once: true },
+	);
 }
 
 function _getVodAdRequest(urlStr, mediaKeyOrResolver) {
@@ -7869,7 +7938,10 @@ function _hookMainFetch() {
 				_recordBlockedVodAdRequest(blockedRequest);
 				return realXhrOpen.call(this, method, emptyVastResponseUrl, ...rest);
 			}
-			_logUnblockedClientSideAdRequest(url, __TTVAB_STATE__.PageMediaKey);
+			_observeClientSideAdXhr(
+				this,
+				_getClientSideAdRequestLogLabel(url, __TTVAB_STATE__.PageMediaKey),
+			);
 			return realXhrOpen.call(this, method, url, ...rest);
 		};
 	}
@@ -8009,7 +8081,16 @@ function _hookMainFetch() {
 					statusText: "No Content",
 				});
 			}
-			_logUnblockedClientSideAdRequest(urlStr, __TTVAB_STATE__.PageMediaKey);
+			const clientSideAdRequestLabel = _getClientSideAdRequestLogLabel(
+				urlStr,
+				__TTVAB_STATE__.PageMediaKey,
+			);
+			if (clientSideAdRequestLabel) {
+				return _observeClientSideAdFetch(
+					realFetch.apply(this, args),
+					clientSideAdRequestLabel,
+				);
+			}
 			if (isGqlEndpointUrl(urlStr)) {
 				_syncStoredDeviceId();
 				let nextArgs = args;
