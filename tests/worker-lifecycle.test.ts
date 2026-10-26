@@ -8039,31 +8039,92 @@ describe("client-side ad requests on live pages", () => {
 
 	const adLogs = () =>
 		logs.filter((message) => message.startsWith("[CSAI] Twitch requested"));
+	const answered =
+		"TTV AB let it through and Twitch's ad server answered with HTTP 200";
+	const failed =
+		"TTV AB let it through and it failed before a response (blocked by the browser, another extension, or the network)";
 
-	it("passes the request through and logs it once per break type every 5 seconds, without its parameters", async () => {
+	it("logs each request once it settles, with its break and ad format but without its parameters", async () => {
 		const midroll =
-			"https://edge.ads.twitch.tv/ads?bp=midroll&sid=private-session&token=secret";
+			"https://edge.ads.twitch.tv/ads?bp=midroll&afmt=OUTSTREAM_HOME_PAGE_VIDEO&sid=private-session&token=secret";
 		expect(await (await window.fetch(midroll)).text()).toBe("native");
-		new window.XMLHttpRequest().open("GET", midroll);
-		expect(nativeOpen).toHaveBeenLastCalledWith("GET", midroll);
-		await window.fetch(
-			"https://edge.ads.twitch.tv/ads/format?bp=midroll&sid=private-session",
+		await window.fetch(midroll);
+		nativeFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+		await expect(
+			window.fetch(
+				"https://edge.ads.twitch.tv/ads/format?bp=midroll&did=device",
+			),
+		).rejects.toThrow("Failed to fetch");
+		nativeFetch.mockRejectedValueOnce(
+			new DOMException("The operation was aborted", "AbortError"),
 		);
-		await window.fetch(
-			"https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?bp=preroll",
-		);
+		await expect(
+			window.fetch(
+				"https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?bp=preroll",
+			),
+		).rejects.toMatchObject({ name: "AbortError" });
 		vi.advanceTimersByTime(5000);
 		await window.fetch(midroll);
 		expect(adLogs()).toEqual([
-			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
-			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads/format for live:testchannel; the request was not blocked",
-			"[CSAI] Twitch requested a client-side preroll ad from vaes.amazon-adsystem.com/2018-01-01/3p/ads for live:testchannel; the request was not blocked",
-			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+			`[CSAI] Twitch requested a client-side ad (midroll, OUTSTREAM_HOME_PAGE_VIDEO) from edge.ads.twitch.tv/ads for live:testchannel; ${answered}`,
+			`[CSAI] Twitch requested a client-side ad (midroll) from edge.ads.twitch.tv/ads/format for live:testchannel; ${failed}`,
+			"[CSAI] Twitch requested a client-side ad (preroll) from vaes.amazon-adsystem.com/2018-01-01/3p/ads for live:testchannel; TTV AB let it through and the page cancelled it",
+			`[CSAI] Twitch requested a client-side ad (midroll, OUTSTREAM_HOME_PAGE_VIDEO) from edge.ads.twitch.tv/ads for live:testchannel; ${answered}`,
 		]);
-		expect(adLogs().join("\n")).not.toMatch(/secret|private-session/);
+		expect(adLogs().join("\n")).not.toMatch(/secret|private-session|device/);
+		expect(nativeFetch).toHaveBeenCalledTimes(5);
 	});
 
-	it("ignores unrelated and look-alike URLs, odd break names, and disabled blocking", async () => {
+	it("logs an XHR ad request when it ends, telling failures from cancellations", () => {
+		const url = "https://edge.ads.twitch.tv/ads?bp=midroll&afmt=HEADLINER";
+		const failedXhr = new window.XMLHttpRequest();
+		failedXhr.open("GET", url);
+		expect(nativeOpen).toHaveBeenLastCalledWith("GET", url);
+		expect(adLogs()).toEqual([]);
+		failedXhr.dispatchEvent(new Event("loadend"));
+		failedXhr.dispatchEvent(new Event("loadend"));
+		vi.advanceTimersByTime(5000);
+		const cancelledXhr = new window.XMLHttpRequest();
+		cancelledXhr.open("GET", url);
+		cancelledXhr.dispatchEvent(new Event("abort"));
+		cancelledXhr.dispatchEvent(new Event("loadend"));
+		expect(adLogs()).toEqual([
+			`[CSAI] Twitch requested a client-side ad (midroll, HEADLINER) from edge.ads.twitch.tv/ads for live:testchannel; ${failed}`,
+			"[CSAI] Twitch requested a client-side ad (midroll, HEADLINER) from edge.ads.twitch.tv/ads for live:testchannel; TTV AB let it through and the page cancelled it",
+		]);
+	});
+
+	it("says where a request without a stream came from", async () => {
+		Object.assign(g.__TTVAB_STATE__ as Record<string, unknown>, {
+			PageMediaKey: null,
+			PageMediaType: null,
+			PageChannel: null,
+		});
+		const happyDom = (
+			window as unknown as {
+				happyDOM: { setURL: (url: string) => void };
+			}
+		).happyDOM;
+		const previousUrl = window.location.href;
+		try {
+			happyDom.setURL("https://www.twitch.tv/");
+			await window.fetch(
+				"https://edge.ads.twitch.tv/ads?bp=midroll&afmt=HEADLINER",
+			);
+			happyDom.setURL("https://www.twitch.tv/directory");
+			await window.fetch(
+				"https://edge.ads.twitch.tv/ads?bp=midroll&afmt=HEADLINER",
+			);
+		} finally {
+			happyDom.setURL(previousUrl);
+		}
+		expect(adLogs()).toEqual([
+			`[CSAI] Twitch requested a client-side ad (midroll, HEADLINER) from edge.ads.twitch.tv/ads on the home page; ${answered}`,
+			`[CSAI] Twitch requested a client-side ad (midroll, HEADLINER) from edge.ads.twitch.tv/ads outside a stream; ${answered}`,
+		]);
+	});
+
+	it("ignores unrelated and look-alike URLs, odd parameters, and disabled blocking", async () => {
 		for (const url of [
 			"https://example.invalid/segment.ts",
 			"https://edge.ads.twitch.tv.example/ads",
@@ -8071,11 +8132,13 @@ describe("client-side ad requests on live pages", () => {
 			"http://edge.ads.twitch.tv/ads",
 		])
 			await window.fetch(url);
-		await window.fetch("https://edge.ads.twitch.tv/ads?bp=%3Cscript%3E");
+		await window.fetch(
+			"https://edge.ads.twitch.tv/ads?bp=%3Cscript%3E&afmt=%3Cimg%3E",
+		);
 		(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled = false;
 		await window.fetch("https://edge.ads.twitch.tv/ads?bp=preroll");
 		expect(adLogs()).toEqual([
-			"[CSAI] Twitch requested a client-side unknown ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+			`[CSAI] Twitch requested a client-side ad (unknown break) from edge.ads.twitch.tv/ads for live:testchannel; ${answered}`,
 		]);
 	});
 
@@ -10669,7 +10732,7 @@ describe("injected worker VOD ad requests", () => {
 				.map((message) => String(message.value.m))
 				.filter((message) => message.startsWith("[CSAI] Twitch requested"));
 			expect(logs).toEqual([
-				"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+				"[CSAI] Twitch requested a client-side ad (midroll) from edge.ads.twitch.tv/ads for live:testchannel; TTV AB let it through and Twitch's ad server answered with HTTP 200",
 			]);
 		} finally {
 			harness.restore();
