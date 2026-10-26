@@ -821,8 +821,54 @@ function _canRefreshUnhookedPlayer(mediaKey) {
 	}
 }
 
+const _LateStartPlayerRestartState = { armed: false };
+
+function _restartPlayerStartedBeforeHooks() {
+	if (!_LateStartPlayerRestartState.armed) return false;
+	try {
+		const { player } = _getPlayerAndState();
+		if (Number(_getPlayerCore(player)?.worker?.__TTVABGeneration) > 0) {
+			_LateStartPlayerRestartState.armed = false;
+			return false;
+		}
+		const mediaKey = _getPlaybackContextFromUrl(window.location.href).MediaKey;
+		const video = player?.getHTMLVideoElement?.();
+		if (
+			!mediaKey ||
+			__TTVAB_STATE__.HasResolvedAdsCountState !== true ||
+			!_getUnhookedPlayerWorker() ||
+			!(video instanceof HTMLVideoElement) ||
+			video.paused ||
+			video.ended ||
+			_isNativeDocumentHidden() ||
+			_hasUserPauseIntent(null, mediaKey)
+		)
+			return false;
+		_LateStartPlayerRestartState.armed = false;
+		if (_UnhookedPlayerState.mediaKey) {
+			_clearWorkerRecoveryNotice(_UnhookedPlayerState.mediaKey);
+		}
+		_UnhookedPlayerState.workerRef = null;
+		_UnhookedPlayerState.mediaKey = null;
+		_UnhookedPlayerState.noticeShownAt = 0;
+		_log(
+			"Restarting the player once so ad blocking covers the stream that was already playing",
+			"info",
+		);
+		_doPlayerTask(false, true, {
+			reason: "worker-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function _checkUnhookedPlayer() {
 	try {
+		if (_restartPlayerStartedBeforeHooks()) return;
 		const mediaKey = _getPlaybackContextFromUrl(window.location.href).MediaKey;
 		const pageGeneration =
 			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
@@ -8557,6 +8603,7 @@ function _hookVisibilityState() {
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 			);
+			_restartPlayerStartedBeforeHooks();
 		};
 		let isInstalled = false;
 		const install = () => {

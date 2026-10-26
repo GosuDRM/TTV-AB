@@ -2491,4 +2491,18 @@ describe("_hookVisibilityState (focus and page lifecycle)", () => {
 			["testchannel", "live:testchannel"],
 		]);
 	});
+
+	it("offers the one-time late-start player restart on each visibility edge", () => {
+		const restart = vi
+			.spyOn(g, "_restartPlayerStartedBeforeHooks")
+			.mockReturnValue(false);
+		try {
+			T<() => void>("_hookVisibilityState")();
+			document.dispatchEvent(new Event("visibilitychange"));
+			window.dispatchEvent(new Event("focus"));
+			expect(restart).toHaveBeenCalledTimes(2);
+		} finally {
+			restart.mockRestore();
+		}
+	});
 });

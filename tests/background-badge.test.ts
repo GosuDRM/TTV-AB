@@ -131,6 +131,101 @@ afterEach(async () => {
 	await Promise.all([g.playbackDefaultsMigration, g.persistChain]);
 });
 
+describe("open Twitch tabs on a fresh install", () => {
+	type Injection = {
+		target: { tabId: number };
+		files: string[];
+		world?: string;
+	};
+	const api = () =>
+		g.chrome as {
+			scripting?: { executeScript: (details: Injection) => Promise<unknown> };
+			tabs: Record<string, unknown>;
+		};
+	const inject = () => (g.injectIntoOpenTwitchTabs as () => Promise<void>)();
+
+	afterEach(() => {
+		delete api().scripting;
+		delete api().tabs.query;
+	});
+
+	function mockTabs(tabs: Record<string, unknown>[]) {
+		const injected: Injection[] = [];
+		const query = vi.fn(async () => tabs);
+		api().tabs.query = query;
+		api().scripting = {
+			executeScript: vi.fn(async (details: Injection) => {
+				injected.push(details);
+				if (details.target.tabId === 2) throw new Error("No access");
+				return [];
+			}),
+		};
+		return { injected, query };
+	}
+
+	it("starts the page script then the bridge in each open, loaded Twitch tab", async () => {
+		const { injected, query } = mockTabs([
+			{ id: 1 },
+			{ id: 2 },
+			{ id: 3, discarded: true },
+			{},
+			{ id: 4 },
+		]);
+		await inject();
+		expect(query).toHaveBeenCalledExactlyOnceWith({ url: "*://*.twitch.tv/*" });
+		expect(injected).toEqual([
+			{
+				target: { tabId: 1 },
+				files: ["src/scripts/content.js"],
+				world: "MAIN",
+			},
+			{ target: { tabId: 1 }, files: ["src/scripts/bridge.js"] },
+			{
+				target: { tabId: 2 },
+				files: ["src/scripts/content.js"],
+				world: "MAIN",
+			},
+			{
+				target: { tabId: 4 },
+				files: ["src/scripts/content.js"],
+				world: "MAIN",
+			},
+			{ target: { tabId: 4 }, files: ["src/scripts/bridge.js"] },
+		]);
+	});
+
+	it("leaves tabs alone where the browser has no scripting API", async () => {
+		const { query } = mockTabs([{ id: 1 }]);
+		delete api().scripting;
+		await inject();
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it("survives a failed tab lookup", async () => {
+		const { injected } = mockTabs([{ id: 1 }]);
+		api().tabs.query = vi.fn(async () => {
+			throw new Error("tabs unavailable");
+		});
+		await expect(inject()).resolves.toBeUndefined();
+		expect(injected).toEqual([]);
+	});
+
+	it.each(["update", "chrome_update", "browser_update"])(
+		"does not inject on %s, where an older copy may still be running",
+		(reason) => {
+			const { query } = mockTabs([{ id: 1 }]);
+			runtimeInstalledListener?.({ reason });
+			expect(query).not.toHaveBeenCalled();
+		},
+	);
+
+	it("injects once when the extension is first installed", async () => {
+		const { injected } = mockTabs([{ id: 1 }]);
+		runtimeInstalledListener?.({ reason: "install" });
+		await vi.waitFor(() => expect(injected).toHaveLength(2));
+	});
+});
+
 describe("playback defaults migration", () => {
 	const migrate = () => (g.migratePlaybackDefaults as () => Promise<void>)();
 	const api = () =>
