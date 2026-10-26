@@ -41,7 +41,7 @@ type TTVABPlaybackState = {
 	IsAdStrippingEnabled: boolean;
 	DisableAdSpoofing: boolean;
 	DisableAutoplayBackup: boolean;
-	PageMediaType: string | null;
+	PageMediaType: TTVABPlaybackContext["MediaType"];
 	PageChannel: string | null;
 	PageVodID: string | null;
 	PageMediaKey: string | null;

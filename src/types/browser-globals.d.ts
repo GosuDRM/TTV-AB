@@ -32,6 +32,9 @@ type TTVABDocumentMethod =
 	| null;
 
 declare const __TTVAB_STATE__: TTVABRuntimeState;
+declare var __TTVAB_LOGS__: PlainObject[] | undefined;
+declare var __TTVAB_LOGS_DROPPED__: number | undefined;
+declare var __TTVAB_LOG_MILESTONES__: PlainObject[] | undefined;
 declare const TRANSLATIONS: Record<
 	string,
 	PlainObject & {
@@ -45,29 +48,25 @@ declare const TRANSLATIONS: Record<
 	}
 >;
 
-interface Document {
-	__lookupGetter__?(property: string): TTVABVisibilityGetter | undefined;
-}
-
 interface Element {
 	_reactRootContainer?: {
 		_internalRoot?: {
 			current?: unknown;
 		};
 	};
-	dataset: DOMStringMap;
 	onclick: ((this: GlobalEventHandlers, ev: MouseEvent) => unknown) | null;
-	offsetHeight: number;
-	offsetParent: Element | null;
-	offsetWidth: number;
 	style: CSSStyleDeclaration;
-	title: string;
 }
 
 interface Window {
 	__TTVAB_STATE__?: TTVABRuntimeState;
-	[key: string]: unknown;
 	ttvabVersion?: number;
+	__TTVAB_M3U8_FALLBACK_ACTIVE?: boolean;
+	__TTVAB_VISIBILITY_HARDENED__?: boolean;
+	__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__?: boolean;
+	__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__?: boolean;
+	__TTVAB_REQUEST_PIP_PATCHED__?: boolean;
+	__TTVAB_WINDOW_OPEN_PATCHED__?: boolean;
 	__TTVAB_NATIVE_VISIBILITY__?: {
 		hidden?: TTVABVisibilityGetter;
 		webkitHidden?: TTVABVisibilityGetter;
@@ -87,6 +86,8 @@ interface Worker {
 	__TTVABFirstPongAt?: number;
 	__TTVABInitialHeartbeatTimer?: ReturnType<typeof setTimeout> | null;
 	__TTVABGeneration?: number;
+	__TTVABLastPipAdMediaKey?: string | null;
+	__TTVABLastPipAdCycleStartedAt?: number;
 	__TTVABPlaybackBootstrapObservedAtByMediaKey?: Map<string, number>;
 	__TTVABPlaybackPageContext?: {
 		pageMediaKey: string;
