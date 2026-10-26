@@ -74,6 +74,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v25.0.3 - 2026-10-26
+
+- **Client-Side Ad Diagnostics** - Record in debug logs when Twitch announces or requests an ad that plays as a separate video beside the stream, and when an unrecognized video starts playing next to it, so any change in how Twitch delivers these ads shows up in logs. ([#98](https://github.com/GosuDRM/TTV-AB/issues/98))
+
 ### v25.0.2 - 2026-10-26
 
 - **Streams Already Playing When You Install** - Restart the player once, without refreshing the tab, so ads are blocked on a stream that was already playing when you installed the extension. In Chrome, the extension now also starts in Twitch tabs that were already open. If the restart does not take effect, the refresh prompt still appears.
@@ -87,41 +91,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Player Stopping After Some Ad Breaks** - Accept the stream when Twitch renumbers it after an ad break, instead of rejecting it until the player stopped with a network error. ([#96](https://github.com/GosuDRM/TTV-AB/issues/96))
 - **Black Screen Diagnostics** - Record in debug logs when the stream's timing runs ahead of your clock, to help track down a black screen during some ad breaks.
-
-### v25.0.0 - 2026-10-23
-
-- **Leaving Clip Pages** - Stop restarting the stream after you leave a clip page when the next page's player is already set up for ad blocking.
-- **Slow Loading With Saved Statistics** - Send statistics saved by earlier tabs without rereading all of them for each entry, so Twitch tabs with a backlog of saved statistics no longer stall while loading.
-- **Settings at Browser Startup** - Use your saved settings as soon as the browser provides them, even when that takes more than a second, instead of running with default settings for 30 seconds or more.
-- **Going Offline During Ad Breaks** - Wait for your connection to return before fixing a stalled stream during an ad break, instead of using up the limited player reloads and backup stream retries while offline.
-- **Featured Stream After Picture-in-Picture** - Keep counting and recovering from ads on the homepage's featured stream after you close picture-in-picture for another channel. They were ignored until you opened another page.
-- **Less Background Activity** - Stop waking the extension every time a page loads or changes in any tab, so it uses less CPU and battery while you browse other sites.
-- **Ad Pod Completion Reports** - Report an ad pod as watched when a replacement player or a restarted ad break reports its last ad, instead of leaving the pod unfinished because earlier ads were reported before.
-- **Missed Ad Counts at Startup** - Keep blocked ads, ad durations, and crash diagnostics that a Twitch tab reports while the extension is still connecting to it. They could be lost when the page was busy loading.
-- **Statistics After an Extension Update** - Save statistics from Twitch tabs left open through an update every 15 minutes and when the tab closes, instead of every minute, so long sessions no longer push out older saved watch time.
-- **Ad Count Badge After Restart** - Show the blocked-ad count on the toolbar icon as soon as the browser starts, instead of leaving it blank until you open Twitch or the popup.
-- **Resetting Statistics While Busy** - Reset statistics even while many statistic updates are waiting to be saved, instead of failing with a "busy" error.
-- **Channel Statistics for Unusual Events** - Count blocked ads and ad durations for the channel you are watching when an event carries an unreadable channel name, instead of leaving them out of channel statistics and Time Saved.
-- **Limit on Saved Ad Counts** - Ignore implausibly large blocked-ad counts in a single update, so a damaged saved entry cannot inflate your totals.
-- **Watch Time From Older Saves** - Leave out watch time from older saved statistics without playback timing when it was recorded before Turbo Mode was turned off or statistics were reset.
-- **Generate Log on a Slow Tab** - Keep a Twitch tab connected when it takes too long to answer Generate Log, so its statistics and setting changes keep arriving afterward.
-- **Pop-ups Over the Recovery Notice** - Wait to show pop-ups in the corner of the Twitch page while the playback recovery notice is on screen, instead of covering it.
-- **Setting Change Confirmation** - Always show the short Active or Inactive confirmation after changing a setting, which some browsers skipped.
-- **Steady Channel Details** - Keep the channel details window steady while a stream plays, instead of restarting its counters and share bar from zero about once a minute.
-- **Reset Dialog While Resetting** - Keep the reset dialog open until the reset finishes, so a failure message is always shown.
-- **Statistics Export Errors** - Show "Export failed" on the Export button when statistics cannot be read, instead of doing nothing.
-- **Focus in Statistics** - Keep focus on the same channel and keep chart tooltips open when statistics update.
-- **Dialog Navigation** - Keep Tab focus inside the reset, debug log, and channel dialogs.
-- **Channel Avatar Cache** - Keep every channel's saved avatar when you open two channels in quick succession.
-- **Welcome Message After a Quick Reload** - Show the welcome message after installing even when you reload Twitch within two seconds, instead of skipping it.
-- **Ad Break Timer Position** - Line the Ad Break Timer up with the video's right edge when the page shows a scrollbar.
-- **Private Details in Debug Logs** - Hide more private details in generated logs, so a shared log stays private.
-- **Debug Log Memory** - Limit how much memory the debug log uses in a Twitch tab when it records many long lines.
-- **Generate Log on Cancelled Navigation** - Keep collecting logs from a tab when leaving the page is cancelled.
-- **Generate Log Snapshot Order** - Keep the newest diagnostic snapshot when browser storage answers slowly, instead of letting an older one overwrite it.
-- **Debug Log Errors During Recovery** - Stop logging cancelled stream requests as errors while TTV AB protects playback after its player recovery runs out, so Generate Log keeps the real errors and ad break history.
-- **Quieter Debug Log During Ad Breaks** - Log a missing fresh backup or an ad break with nothing left to play once per ad break instead of every few seconds, and log a failed backup lookup as a warning instead of an error, so Generate Log keeps more of the ad break history.
-- **Escape on the Debug Log Page** - Stop pressing Escape on the debug log page from causing an error.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

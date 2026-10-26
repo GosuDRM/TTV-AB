@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [25.0.3] - 2026-10-26
+
+Added
+
+- **Client-Side Ad Diagnostics** - Record in debug logs when Twitch announces or requests an ad that plays as a separate video beside the stream, and when an unrecognized video starts playing next to it, so any change in how Twitch delivers these ads shows up in logs. ([#98](https://github.com/GosuDRM/TTV-AB/issues/98))
+
 ## [25.0.2] - 2026-10-26
 
 Fixed
