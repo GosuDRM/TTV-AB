@@ -7991,6 +7991,106 @@ describe("MAIN VOD ad request guard", () => {
 	});
 });
 
+describe("client-side ad requests on live pages", () => {
+	const scopedWindow = window as unknown as Record<string, unknown>;
+	let originalFetch: typeof fetch;
+	let originalOpen: typeof XMLHttpRequest.prototype.open;
+	let originalRealFetch: unknown;
+	let originalLog: unknown;
+	let nativeFetch: ReturnType<typeof vi.fn>;
+	let nativeOpen: ReturnType<typeof vi.fn>;
+	let logs: string[];
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		originalFetch = window.fetch;
+		originalOpen = window.XMLHttpRequest.prototype.open;
+		originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		originalLog = g._log;
+		logs = [];
+		g._log = (message: string) => logs.push(message);
+		nativeFetch = vi.fn(async () => new Response("native"));
+		nativeOpen = vi.fn();
+		window.fetch = nativeFetch as typeof fetch;
+		window.XMLHttpRequest.prototype.open = nativeOpen;
+		(g._LoggedClientSideAdRequests as Map<string, number>).clear();
+		Object.assign(g.__TTVAB_STATE__ as Record<string, unknown>, {
+			IsAdStrippingEnabled: true,
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+		});
+		window.history.replaceState(null, "", "/testchannel");
+		T<() => void>("_hookMainFetch")();
+	});
+
+	afterEach(() => {
+		window.fetch = originalFetch;
+		window.XMLHttpRequest.prototype.open = originalOpen;
+		if (originalRealFetch === undefined) {
+			delete scopedWindow.__TTVAB_REAL_FETCH__;
+		} else {
+			scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+		}
+		g._log = originalLog;
+		vi.useRealTimers();
+	});
+
+	const adLogs = () =>
+		logs.filter((message) => message.startsWith("[CSAI] Twitch requested"));
+
+	it("passes the request through and logs it once per break type every 5 seconds, without its parameters", async () => {
+		const midroll =
+			"https://edge.ads.twitch.tv/ads?bp=midroll&sid=private-session&token=secret";
+		expect(await (await window.fetch(midroll)).text()).toBe("native");
+		new window.XMLHttpRequest().open("GET", midroll);
+		expect(nativeOpen).toHaveBeenLastCalledWith("GET", midroll);
+		await window.fetch(
+			"https://edge.ads.twitch.tv/ads/format?bp=midroll&sid=private-session",
+		);
+		await window.fetch(
+			"https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?bp=preroll",
+		);
+		vi.advanceTimersByTime(5000);
+		await window.fetch(midroll);
+		expect(adLogs()).toEqual([
+			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads/format for live:testchannel; the request was not blocked",
+			"[CSAI] Twitch requested a client-side preroll ad from vaes.amazon-adsystem.com/2018-01-01/3p/ads for live:testchannel; the request was not blocked",
+			"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+		]);
+		expect(adLogs().join("\n")).not.toMatch(/secret|private-session/);
+	});
+
+	it("ignores unrelated and look-alike URLs, odd break names, and disabled blocking", async () => {
+		for (const url of [
+			"https://example.invalid/segment.ts",
+			"https://edge.ads.twitch.tv.example/ads",
+			"https://edge.ads.twitch.tv/ads/extra",
+			"http://edge.ads.twitch.tv/ads",
+		])
+			await window.fetch(url);
+		await window.fetch("https://edge.ads.twitch.tv/ads?bp=%3Cscript%3E");
+		(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled = false;
+		await window.fetch("https://edge.ads.twitch.tv/ads?bp=preroll");
+		expect(adLogs()).toEqual([
+			"[CSAI] Twitch requested a client-side unknown ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+		]);
+	});
+
+	it("keeps at most 16 recent request kinds", async () => {
+		for (let index = 0; index < 40; index++) {
+			const breakType = `${String.fromCharCode(97 + (index % 26))}${String.fromCharCode(97 + Math.floor(index / 26))}`;
+			await window.fetch(`https://edge.ads.twitch.tv/ads?bp=${breakType}`);
+		}
+		expect(adLogs()).toHaveLength(40);
+		expect((g._LoggedClientSideAdRequests as Map<string, number>).size).toBe(
+			16,
+		);
+	});
+});
+
 describe("VOD request ownership and cancellation", () => {
 	const adUrl = "https://edge.ads.twitch.tv/ads?sid=vod-guard";
 	let originalFetch: typeof fetch;
@@ -10546,6 +10646,36 @@ describe("injected worker VOD ad requests", () => {
 			}
 		},
 	);
+
+	it("logs a live stream's client-side ad request that the worker lets through", async () => {
+		vi.useFakeTimers();
+		window.history.replaceState(null, "", "/testchannel");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const rawFetch = vi.fn(async () => new Response("native"));
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.deliverBootstrap();
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			const liveAdUrl =
+				"https://edge.ads.twitch.tv/ads?bp=midroll&sid=live-secret";
+			expect(await (await fetch(liveAdUrl)).text()).toBe("native");
+			expect(await (await fetch(liveAdUrl)).text()).toBe("native");
+			const logs = (
+				runtime.scope.postMessage as ReturnType<typeof vi.fn>
+			).mock.calls
+				.map(([value]) => value?.message)
+				.filter((message) => message?.key === "LogEntry")
+				.map((message) => String(message.value.m))
+				.filter((message) => message.startsWith("[CSAI] Twitch requested"));
+			expect(logs).toEqual([
+				"[CSAI] Twitch requested a client-side midroll ad from edge.ads.twitch.tv/ads for live:testchannel; the request was not blocked",
+			]);
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
 
 	it.each(["live", "vod"])(
 		"keeps banner %s PiP ad blocking across navigation and releases its ad state",

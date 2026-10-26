@@ -3624,8 +3624,38 @@ function _setIndependentVideoAdGuardEnabled(enabled) {
 	return didInstallStyle;
 }
 
+const _UnrecognizedPlayingVideoLogState = {
+	logged: new WeakSet<HTMLVideoElement>(),
+	count: 0,
+};
+
 function _handleIndependentVideoAdMediaEvent(event) {
-	_suppressIndependentVideoAd(event.target);
+	if (_suppressIndependentVideoAd(event.target)) return;
+	if (event.type === "playing") _logUnrecognizedPlayingVideo(event.target);
+}
+
+function _logUnrecognizedPlayingVideo(media) {
+	try {
+		if (
+			!(media instanceof HTMLVideoElement) ||
+			!_isIndependentVideoAdGuardEnabled() ||
+			_UnrecognizedPlayingVideoLogState.count >= 20 ||
+			_UnrecognizedPlayingVideoLogState.logged.has(media) ||
+			!(media.currentSrc || media.getAttribute("src")) ||
+			_hasBlobMediaSource(media) ||
+			_getPrimaryPlayerVideoMatch(media) !== false
+		)
+			return false;
+		_UnrecognizedPlayingVideoLogState.logged.add(media);
+		_UnrecognizedPlayingVideoLogState.count += 1;
+		_log(
+			`Unrecognized video playing beside the stream, left visible: ${_serializeIndependentVideoAdElement(media)}`,
+			"info",
+		);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function _suppressIndependentVideoAdsForNode(node) {

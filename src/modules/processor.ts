@@ -2461,6 +2461,37 @@ function _logServedEndAheadOfClock(
 	} catch {}
 }
 
+const _ClientSideAdSlotLogs = new WeakMap<object, string[]>();
+
+function _logClientSideAdSlots(info: Partial<TTVABStreamInfo>, text) {
+	try {
+		if (
+			info?.MediaType !== "live" ||
+			typeof text !== "string" ||
+			!text.includes('CLASS="twitch-maf-ad"')
+		)
+			return;
+		const logged = _ClientSideAdSlotLogs.get(info) || [];
+		for (const match of text.matchAll(/^#EXT-X-DATERANGE:([^\r\n]*)/gm)) {
+			const attrs = _parseAttrs(match[1]);
+			const id = String(attrs.ID || attrs["START-DATE"] || "");
+			if (attrs.CLASS !== "twitch-maf-ad" || !id || logged.includes(id))
+				continue;
+			logged.push(id);
+			if (logged.length > 16) logged.shift();
+			const plannedSeconds = Number(attrs["PLANNED-DURATION"]);
+			const hasStreamAds =
+				_hasPlaylistAdMarkers(text) ||
+				_playlistHasKnownAdSegments(text, { includeCached: false });
+			_log(
+				`[CSAI] Twitch announced a client-side ad slot for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}${Number.isFinite(plannedSeconds) && plannedSeconds > 0 ? ` (planned ${Math.round(plannedSeconds)}s)` : ""}: ${hasStreamAds ? "the stream also has ad markers" : info.IsShowingAd || info.IsHoldingBackupAfterAd ? "no ad segments in the stream, ad break replacement still served" : "no ad segments in the stream, marker reaches the player"}`,
+				"info",
+			);
+		}
+		_ClientSideAdSlotLogs.set(info, logged);
+	} catch {}
+}
+
 function _observeServedPrefetchTimeline(
 	info: Partial<TTVABStreamInfo>,
 	url,
@@ -6920,7 +6951,10 @@ async function _processM3U8Core(
 				__TTVAB_STATE__.SimulatedAdsDepth > 0),
 	);
 
-	if (!isBackupUrl) _reportLiveStreamStatus(info, text);
+	if (!isBackupUrl) {
+		_reportLiveStreamStatus(info, text);
+		_logClientSideAdSlots(info, text);
+	}
 
 	if (isBackupUrl && !backupPlaylistHasAds) {
 		return text;
