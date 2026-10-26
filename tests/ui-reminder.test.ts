@@ -322,6 +322,27 @@ describe("welcome message", () => {
 		expect(localStorage.getItem(FIRST_RUN_KEY)).toBe("true");
 	});
 
+	it("waits until the tab is visible before showing and marking it shown", () => {
+		let visibility = "hidden";
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			get: () => visibility,
+		});
+		try {
+			T<() => void>("_showWelcome")();
+			vi.advanceTimersByTime(30000);
+			expect(welcome()).toBeNull();
+			expect(localStorage.getItem(FIRST_RUN_KEY)).toBeNull();
+			visibility = "visible";
+			document.dispatchEvent(new Event("visibilitychange"));
+			vi.advanceTimersByTime(2000);
+			expect(welcome()).not.toBeNull();
+			expect(localStorage.getItem(FIRST_RUN_KEY)).toBe("true");
+		} finally {
+			delete (document as unknown as Record<string, unknown>).visibilityState;
+		}
+	});
+
 	it("does not show again when another tab showed it first", () => {
 		T<() => void>("_showWelcome")();
 		localStorage.setItem(FIRST_RUN_KEY, "true");
