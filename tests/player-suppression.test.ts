@@ -844,6 +844,84 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 			g._incrementAdsBlocked = originalIncrement;
 		}
 	});
+
+	describe("unrecognized videos playing beside the stream", () => {
+		const handle = (target: EventTarget, type = "playing") =>
+			T<(event: { target: EventTarget | null; type: string }) => void>(
+				"_handleIndependentVideoAdMediaEvent",
+			)({ target, type });
+		let logs: string[];
+		let primary: HTMLVideoElement;
+
+		beforeEach(() => {
+			logs = [];
+			g._log = (message: string) => logs.push(message);
+			primary = makeVideo(null).video;
+			primary.src = "blob:https://www.twitch.tv/primary-player";
+			g._getPlayerAndState = () => ({
+				player: { getHTMLVideoElement: () => primary },
+			});
+			const logState = g._UnrecognizedPlayingVideoLogState as {
+				logged: WeakSet<HTMLVideoElement>;
+				count: number;
+			};
+			logState.logged = new WeakSet();
+			logState.count = 0;
+		});
+
+		it("logs a new direct-source video once, without its query string, and leaves it alone", () => {
+			const unknown = makeVideo(null).video;
+			unknown.src = "https://ads.example.net/creative.mp4?token=secret";
+			handle(unknown);
+			handle(unknown);
+			expect(logs).toHaveLength(1);
+			expect(logs[0]).toMatch(
+				/^Unrecognized video playing beside the stream, left visible: <video/,
+			);
+			expect(logs[0]).toContain("ads.example.net");
+			expect(logs[0]).not.toContain("secret");
+			expect(unknown.muted).toBe(false);
+			expect(unknown.style.getPropertyValue("display")).toBe("");
+		});
+
+		it("does not log known ads, Twitch players, the stream, or other media events", () => {
+			const ad = makeVideo("Video Advertisement").video;
+			const preview = makeVideo(null).video;
+			preview.src = "blob:https://www.twitch.tv/preview-player";
+			const notPlaying = makeVideo(null).video;
+			notPlaying.src = "https://ads.example.net/paused.mp4";
+			handle(ad);
+			handle(preview);
+			handle(primary);
+			handle(notPlaying, "play");
+			handle(notPlaying, "volumechange");
+			expect(logs).toEqual([
+				expect.stringMatching(/^Suppressed independent video advertisement/),
+			]);
+		});
+
+		it("stays quiet while blocking is off or the stream player is unknown", () => {
+			const unknown = makeVideo(null).video;
+			unknown.src = "https://ads.example.net/creative.mp4";
+			(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled =
+				false;
+			handle(unknown);
+			(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled =
+				true;
+			g._getPlayerAndState = () => ({ player: null });
+			handle(unknown);
+			expect(logs).toEqual([]);
+		});
+
+		it("stops after 20 videos on a page", () => {
+			for (let index = 0; index < 25; index++) {
+				const video = makeVideo(null).video;
+				video.src = `https://ads.example.net/${index}.mp4`;
+				handle(video);
+			}
+			expect(logs).toHaveLength(20);
+		});
+	});
 });
 
 describe("independent video ad container collapse", () => {

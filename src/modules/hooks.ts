@@ -1891,6 +1891,10 @@ function _hookWorkerFetch() {
 				});
 				return new Response(null, { status: 204, statusText: "No Content" });
 			}
+			_logUnblockedClientSideAdRequest(
+				url,
+				adRequestMediaKey || playbackRequestOwner.pageMediaKey,
+			);
 
 			const shouldBlockAdSegments =
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
@@ -7691,6 +7695,51 @@ function _hookWorker() {
 }
 
 const _blockedVodAdCountExpirations = new Map();
+const _LoggedClientSideAdRequests = new Map<string, number>();
+
+function _isClientSideAdRequestUrl(parsedUrl: URL) {
+	return (
+		(parsedUrl.origin === "https://edge.ads.twitch.tv" ||
+			parsedUrl.origin === "https://vaes.amazon-adsystem.com") &&
+		(parsedUrl.pathname === "/2018-01-01/3p/ads" ||
+			parsedUrl.pathname === "/ads" ||
+			parsedUrl.pathname === "/ads/format")
+	);
+}
+
+function _logUnblockedClientSideAdRequest(urlStr, mediaKey) {
+	try {
+		if (__TTVAB_STATE__?.IsAdStrippingEnabled !== true) return false;
+		const text = String(urlStr || "");
+		if (!/edge\.ads\.twitch\.tv|vaes\.amazon-adsystem\.com/i.test(text))
+			return false;
+		const parsedUrl = new URL(text);
+		if (!_isClientSideAdRequestUrl(parsedUrl)) return false;
+		const requestedBreak = parsedUrl.searchParams.get("bp") || "";
+		const breakType = /^[a-z_-]{1,24}$/i.test(requestedBreak)
+			? requestedBreak
+			: "unknown";
+		const safeMediaKey = _normalizeMediaKey(mediaKey) || "no media";
+		const target = `${parsedUrl.host}${parsedUrl.pathname}`;
+		const key = `${target}|${breakType}|${safeMediaKey}`;
+		const now = Date.now();
+		if (now - (_LoggedClientSideAdRequests.get(key) || 0) < 5000) return false;
+		_LoggedClientSideAdRequests.delete(key);
+		_LoggedClientSideAdRequests.set(key, now);
+		if (_LoggedClientSideAdRequests.size > 16) {
+			_LoggedClientSideAdRequests.delete(
+				_LoggedClientSideAdRequests.keys().next().value,
+			);
+		}
+		_log(
+			`[CSAI] Twitch requested a client-side ${breakType} ad from ${target} for ${safeMediaKey}; the request was not blocked`,
+			"info",
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 function _getVodAdRequest(urlStr, mediaKeyOrResolver) {
 	if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) return null;
@@ -7702,14 +7751,7 @@ function _getVodAdRequest(urlStr, mediaKeyOrResolver) {
 	if (!resolveMediaKey && !normalizedMediaKey?.startsWith("vod:")) return null;
 	try {
 		const parsedUrl = new URL(urlStr);
-		const isKnownAdOrigin =
-			parsedUrl.origin === "https://edge.ads.twitch.tv" ||
-			parsedUrl.origin === "https://vaes.amazon-adsystem.com";
-		const isKnownAdPath =
-			parsedUrl.pathname === "/2018-01-01/3p/ads" ||
-			parsedUrl.pathname === "/ads" ||
-			parsedUrl.pathname === "/ads/format";
-		if (!isKnownAdOrigin || !isKnownAdPath) return null;
+		if (!_isClientSideAdRequestUrl(parsedUrl)) return null;
 		if (resolveMediaKey) {
 			normalizedMediaKey = _normalizeMediaKey(resolveMediaKey());
 			if (!normalizedMediaKey?.startsWith("vod:")) return null;
@@ -7827,6 +7869,7 @@ function _hookMainFetch() {
 				_recordBlockedVodAdRequest(blockedRequest);
 				return realXhrOpen.call(this, method, emptyVastResponseUrl, ...rest);
 			}
+			_logUnblockedClientSideAdRequest(url, __TTVAB_STATE__.PageMediaKey);
 			return realXhrOpen.call(this, method, url, ...rest);
 		};
 	}
@@ -7966,6 +8009,7 @@ function _hookMainFetch() {
 					statusText: "No Content",
 				});
 			}
+			_logUnblockedClientSideAdRequest(urlStr, __TTVAB_STATE__.PageMediaKey);
 			if (isGqlEndpointUrl(urlStr)) {
 				_syncStoredDeviceId();
 				let nextArgs = args;

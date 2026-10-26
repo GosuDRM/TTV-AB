@@ -13908,3 +13908,114 @@ describe("_getAdStartBackupWaitDeadline (bounded backup wait before the first ho
 		expect(deadline()(eligibleInfo(), media(6))).toBe(0);
 	});
 });
+
+describe("client-side ad slot logging", () => {
+	const cleanPlaylist = readFileSync(
+		resolve(__dirname, "fixtures/twitch-clean-media.m3u8"),
+		"utf8",
+	).trimEnd();
+	const slotMarker = (id: string, klass = "twitch-maf-ad") =>
+		`#EXT-X-DATERANGE:ID="${id}",CLASS="${klass}",START-DATE="2026-09-19T16:12:49.977Z",PLANNED-DURATION=60.000,END-ON-NEXT=YES,X-TTV-MAF-AD-COMMERCIAL-ID="commercial-secret",X-TTV-MAF-AD-RADS-TOKEN="rads-secret"`;
+	const withMarkers = (...markers: string[]) =>
+		cleanPlaylist.replace(
+			"#EXT-X-PROGRAM-DATE-TIME:2026-09-19T16:12:49.977Z",
+			`${markers.join("\n")}\n#EXT-X-PROGRAM-DATE-TIME:2026-09-19T16:12:49.977Z`,
+		);
+	let logs: string[];
+
+	beforeEach(() => {
+		logs = [];
+		g._log = (message: string) => logs.push(message);
+	});
+
+	it("logs each slot once without its identifiers or tokens", () => {
+		const log = T<(info: unknown, text: string) => void>(
+			"_logClientSideAdSlots",
+		);
+		const info = makeInfo();
+		const first = withMarkers(slotMarker("maf-ad-first"));
+		log(info, first);
+		log(info, first);
+		log(
+			info,
+			withMarkers(slotMarker("maf-ad-first"), slotMarker("maf-ad-second")),
+		);
+		expect(logs).toEqual([
+			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
+			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
+		]);
+		expect(logs.join("\n")).not.toMatch(/secret|maf-ad-first|maf-ad-second/);
+	});
+
+	it("says when the stream also carries ad markers or a replacement is already served", () => {
+		const log = T<(info: unknown, text: string) => void>(
+			"_logClientSideAdSlots",
+		);
+		log(
+			makeInfo(),
+			withMarkers(
+				slotMarker("maf-ad-1"),
+				slotMarker("stitched-1", "twitch-stitched-ad"),
+			),
+		);
+		log(makeInfo({ IsShowingAd: true }), withMarkers(slotMarker("maf-ad-2")));
+		expect(logs).toEqual([
+			expect.stringMatching(/: the stream also has ad markers$/),
+			expect.stringMatching(
+				/: no ad segments in the stream, ad break replacement still served$/,
+			),
+		]);
+	});
+
+	it("ignores ordinary Twitch metadata and VOD playlists", () => {
+		const log = T<(info: unknown, text: string) => void>(
+			"_logClientSideAdSlots",
+		);
+		log(makeInfo(), cleanPlaylist);
+		log(
+			makeInfo({ MediaType: "vod", MediaKey: "vod:123" }),
+			withMarkers(slotMarker("maf-ad-vod")),
+		);
+		expect(logs).toEqual([]);
+	});
+
+	it("serves the native playlist unchanged and logs the slot from the full processor", async () => {
+		const state = getState();
+		const url = "https://video-weaver.example.ttvnw.net/v1/playlist/maf.m3u8";
+		const info = makeInfo();
+		const restore = snapshotGlobals(["_findBackupStream"]);
+		const previous = {
+			PageMediaType: state.PageMediaType,
+			PageChannel: state.PageChannel,
+			PageMediaKey: state.PageMediaKey,
+			StreamInfos: state.StreamInfos,
+			StreamInfosByUrl: state.StreamInfosByUrl,
+		};
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			StreamInfos: { "live:testchannel": info },
+			StreamInfosByUrl: { [url]: info },
+		});
+		const findBackup = vi.fn();
+		g._findBackupStream = findBackup;
+		const playlist = withMarkers(slotMarker("maf-ad-core"));
+		try {
+			const out = await T<
+				(url: string, text: string, realFetch: unknown) => Promise<string>
+			>("_processM3U8Core")(url, playlist, async () => {
+				throw new Error("no fetch expected");
+			});
+			expect(out).toBe(playlist);
+			expect(info.IsShowingAd).toBe(false);
+			expect(findBackup).not.toHaveBeenCalled();
+			expect(logs.filter((line) => line.startsWith("[CSAI]"))).toEqual([
+				"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
+			]);
+		} finally {
+			Object.assign(state, previous);
+			restore();
+		}
+	});
+});
