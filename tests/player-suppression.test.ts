@@ -2551,34 +2551,30 @@ describe("_hookVisibilityState (focus and page lifecycle)", () => {
 		g._guardPlaybackAcrossVisibilityTransition = originalGuard;
 	});
 
-	it("recovers on focus and reinstalls its listeners after a page restore", () => {
-		T<() => void>("_hookVisibilityState")();
-
-		window.dispatchEvent(new Event("focus"));
-		expect(guardCalls).toEqual([["testchannel", "live:testchannel"]]);
-
-		window.dispatchEvent(new Event("pagehide"));
-		document.dispatchEvent(new Event("visibilitychange"));
-		expect(guardCalls).toHaveLength(1);
-
-		window.dispatchEvent(new Event("pageshow"));
-		document.dispatchEvent(new Event("visibilitychange"));
-		expect(guardCalls).toEqual([
-			["testchannel", "live:testchannel"],
-			["testchannel", "live:testchannel"],
-			["testchannel", "live:testchannel"],
-		]);
-	});
-
-	it("offers the one-time late-start player restart on each visibility edge", () => {
+	it("recovers on focus, offers the late-start restart, and reinstalls its listeners after a page restore", () => {
 		const restart = vi
 			.spyOn(g, "_restartPlayerStartedBeforeHooks")
 			.mockReturnValue(false);
 		try {
 			T<() => void>("_hookVisibilityState")();
-			document.dispatchEvent(new Event("visibilitychange"));
+
 			window.dispatchEvent(new Event("focus"));
-			expect(restart).toHaveBeenCalledTimes(2);
+			expect(guardCalls).toEqual([["testchannel", "live:testchannel"]]);
+			expect(restart).toHaveBeenCalledTimes(1);
+
+			window.dispatchEvent(new Event("pagehide"));
+			document.dispatchEvent(new Event("visibilitychange"));
+			expect(guardCalls).toHaveLength(1);
+			expect(restart).toHaveBeenCalledTimes(1);
+
+			window.dispatchEvent(new Event("pageshow"));
+			document.dispatchEvent(new Event("visibilitychange"));
+			expect(guardCalls).toEqual([
+				["testchannel", "live:testchannel"],
+				["testchannel", "live:testchannel"],
+				["testchannel", "live:testchannel"],
+			]);
+			expect(restart).toHaveBeenCalledTimes(3);
 		} finally {
 			restart.mockRestore();
 		}
