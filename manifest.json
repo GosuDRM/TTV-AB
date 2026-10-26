@@ -10,7 +10,7 @@
 	"background": {
 		"service_worker": "src/scripts/background.js"
 	},
-	"permissions": ["storage"],
+	"permissions": ["scripting", "storage"],
 	"host_permissions": ["*://*.twitch.tv/*"],
 	"content_scripts": [
 		{

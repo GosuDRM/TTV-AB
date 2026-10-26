@@ -14,32 +14,7 @@ function _deferInitUntilClipContextLeft() {
 		if (_isClipEditorContext()) return;
 		clearInterval(intervalId);
 		_log("Left clip context; initializing", "info");
-		_init();
-		setTimeout(() => {
-			try {
-				if (
-					typeof _getPlayerAndState !== "function" ||
-					typeof _getPlayerCore !== "function" ||
-					typeof _doPlayerTask !== "function"
-				) {
-					return;
-				}
-				const { player } = _getPlayerAndState();
-				if (!player) return;
-				if (Number(_getPlayerCore(player)?.worker?.__TTVABGeneration) > 0) {
-					return;
-				}
-				_log(
-					"Reloading player to attach worker hooks after deferred init",
-					"info",
-				);
-				_doPlayerTask(false, true, {
-					reason: "worker-recovery",
-					refreshAccessToken: true,
-					newMediaPlayerInstance: true,
-				});
-			} catch {}
-		}, 500);
+		_init(true);
 	}, 250);
 }
 
@@ -1051,8 +1026,14 @@ function _hookSpaNavigation() {
 	});
 }
 
-function _init() {
+function _init(startedAfterPageLoad = document.readyState !== "loading") {
 	if (!_bootstrap()) return;
+	if (
+		startedAfterPageLoad &&
+		typeof _LateStartPlayerRestartState !== "undefined"
+	) {
+		_LateStartPlayerRestartState.armed = true;
+	}
 
 	_bindBridgePortHandshake();
 	_declareState(window);
@@ -1069,6 +1050,12 @@ function _init() {
 			: 0;
 		__TTVAB_STATE__.HasResolvedAdsCountState = true;
 		__TTVAB_STATE__.PendingInitialAdsBlockedDelta = 0;
+		if (
+			isFirstRestore &&
+			typeof _restartPlayerStartedBeforeHooks === "function"
+		) {
+			_restartPlayerStartedBeforeHooks();
+		}
 		const restoredCount =
 			_normalizeCount(safeDetail.count) + pendingInitialAdsBlockedDelta;
 		if (_S.adsBlocked === restoredCount) return;

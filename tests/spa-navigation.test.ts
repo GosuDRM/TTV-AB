@@ -818,8 +818,8 @@ describe("deferred init after landing on a clip page", () => {
 	});
 
 	it("initializes once the SPA leaves the clip route, exactly once", () => {
-		const initCalls: number[] = [];
-		g._init = () => initCalls.push(1);
+		const initCalls: unknown[][] = [];
+		g._init = (...args: unknown[]) => initCalls.push(args);
 		history.replaceState(null, "", "/somechannel/clip/FunnyMoment");
 		expect(T<() => boolean>("_isClipEditorContext")()).toBe(true);
 
@@ -829,54 +829,10 @@ describe("deferred init after landing on a clip page", () => {
 
 		history.replaceState(null, "", "/somechannel");
 		vi.advanceTimersByTime(300);
-		expect(initCalls).toHaveLength(1);
+		expect(initCalls).toEqual([[true]]);
 
 		vi.advanceTimersByTime(5000);
-		expect(initCalls).toHaveLength(1);
-	});
-});
-
-describe("deferred init player reload", () => {
-	const saved: Record<string, unknown> = {};
-	const names = [
-		"_init",
-		"_log",
-		"_getPlayerAndState",
-		"_getPlayerCore",
-		"_doPlayerTask",
-	];
-
-	beforeEach(() => {
-		for (const name of names) saved[name] = g[name];
-		g._log = () => {};
-		g._init = () => {};
-		vi.useFakeTimers();
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-		for (const name of names) g[name] = saved[name];
-		history.replaceState(null, "", "/");
-	});
-
-	function leaveClipWithWorker(worker: Record<string, unknown>) {
-		const reloads: unknown[] = [];
-		g._getPlayerAndState = () => ({ player: {} });
-		g._getPlayerCore = () => ({ worker });
-		g._doPlayerTask = (...args: unknown[]) => reloads.push(args);
-		history.replaceState(null, "", "/somechannel/clip/FunnyMoment");
-		T<() => void>("_deferInitUntilClipContextLeft")();
-		history.replaceState(null, "", "/somechannel");
-		vi.advanceTimersByTime(250 + 500);
-		return reloads;
-	}
-
-	it("reloads a player whose worker started before the hooks", () => {
-		expect(leaveClipWithWorker({})).toHaveLength(1);
-	});
-
-	it("keeps a player that already runs a hooked worker", () => {
-		expect(leaveClipWithWorker({ __TTVABGeneration: 3 })).toEqual([]);
+		expect(initCalls).toEqual([[true]]);
 	});
 });
 
@@ -947,6 +903,60 @@ describe("restored ads count", () => {
 		expect(logs.filter((message) => message.startsWith("Restored"))).toEqual([
 			"Restored ads count: 12",
 		]);
+	});
+
+	it("tries the one-time player restart when settings first arrive", () => {
+		const restart = vi.fn();
+		g._restartPlayerStartedBeforeHooks = restart;
+		try {
+			const restore = handlers.get("ttvab-init-count");
+			restore?.({ count: 0 });
+			restore?.({ count: 5 });
+			expect(restart).toHaveBeenCalledOnce();
+		} finally {
+			delete g._restartPlayerStartedBeforeHooks;
+		}
+	});
+
+	it.each([
+		["started after the page loaded", true, true],
+		["started with the page", false, false],
+	])("arms the one-time player restart only when %s", (_label, late, armed) => {
+		const lateStart = { armed: false };
+		g._LateStartPlayerRestartState = lateStart;
+		delete (window as unknown as Record<string, unknown>).ttvabVersion;
+		try {
+			T<(startedAfterPageLoad: boolean) => void>("_init")(late);
+			expect(lateStart.armed).toBe(armed);
+		} finally {
+			delete g._LateStartPlayerRestartState;
+		}
+	});
+
+	it("treats a script running while the document is still loading as a normal start", () => {
+		const lateStart = { armed: false };
+		g._LateStartPlayerRestartState = lateStart;
+		Object.defineProperty(document, "readyState", {
+			configurable: true,
+			get: () => "loading",
+		});
+		delete (window as unknown as Record<string, unknown>).ttvabVersion;
+		try {
+			T<() => void>("_init")();
+			expect(lateStart.armed).toBe(false);
+		} finally {
+			delete (document as unknown as Record<string, unknown>).readyState;
+			delete g._LateStartPlayerRestartState;
+		}
+		delete (window as unknown as Record<string, unknown>).ttvabVersion;
+		g._LateStartPlayerRestartState = lateStart;
+		try {
+			T<() => void>("_init")();
+			expect(document.readyState).not.toBe("loading");
+			expect(lateStart.armed).toBe(true);
+		} finally {
+			delete g._LateStartPlayerRestartState;
+		}
 	});
 });
 

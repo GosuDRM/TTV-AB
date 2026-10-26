@@ -1323,8 +1323,38 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 	});
 }
 
+async function injectIntoOpenTwitchTabs() {
+	if (
+		typeof chrome.scripting?.executeScript !== "function" ||
+		typeof chrome.tabs?.query !== "function"
+	)
+		return;
+	let tabs: chrome.tabs.Tab[] = [];
+	try {
+		tabs = await chrome.tabs.query({ url: "*://*.twitch.tv/*" });
+	} catch {
+		return;
+	}
+	for (const tab of tabs) {
+		if (typeof tab.id !== "number" || tab.discarded) continue;
+		try {
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				files: ["src/scripts/content.js"],
+				world: "MAIN",
+			});
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				files: ["src/scripts/bridge.js"],
+			});
+		} catch {}
+	}
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
-	if (details.reason === "install") void migratePlaybackDefaults(true);
+	if (details.reason !== "install") return;
+	void migratePlaybackDefaults(true);
+	void injectIntoOpenTwitchTabs();
 });
 chrome.runtime.onStartup?.addListener(() => refreshBadgeFromStorage());
 

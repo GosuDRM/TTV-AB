@@ -69,6 +69,7 @@ describe("refresh recovery for a player created before interception", () => {
 		vi.spyOn(g, "_getPrimaryMediaElement").mockImplementation(() => video);
 		vi.spyOn(g, "_checkpointPageDiagnostics").mockReturnValue(true);
 		refresh = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+		(g._LateStartPlayerRestartState as { armed: boolean }).armed = false;
 	});
 
 	afterEach(() => {
@@ -77,6 +78,7 @@ describe("refresh recovery for a player created before interception", () => {
 		vi.clearAllTimers();
 		vi.useRealTimers();
 		vi.restoreAllMocks();
+		(g._LateStartPlayerRestartState as { armed: boolean }).armed = false;
 	});
 
 	function show() {
@@ -85,6 +87,106 @@ describe("refresh recovery for a player created before interception", () => {
 		vi.advanceTimersByTime(5000);
 		check();
 	}
+
+	function startLate() {
+		(g._LateStartPlayerRestartState as { armed: boolean }).armed = true;
+		state().HasResolvedAdsCountState = true;
+		Object.defineProperty(video, "paused", {
+			configurable: true,
+			value: false,
+		});
+		vi.spyOn(g, "_isNativeDocumentHidden").mockReturnValue(false);
+		return vi.spyOn(g, "_doPlayerTask").mockReturnValue(true);
+	}
+
+	it("restarts the stream that was already playing once, then falls back to the refresh prompt", () => {
+		const restart = startLate();
+		check();
+		expect(restart).toHaveBeenCalledExactlyOnceWith(false, true, {
+			reason: "worker-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(notice()).toBeNull();
+		vi.advanceTimersByTime(5000);
+		check();
+		expect(notice()).toBeNull();
+		vi.advanceTimersByTime(5000);
+		check();
+		expect(notice()?.textContent).toContain("start ad blocking");
+		vi.advanceTimersByTime(60000);
+		check();
+		expect(restart).toHaveBeenCalledOnce();
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("replaces a prompt already shown while waiting with the restart", () => {
+		const restart = startLate();
+		vi.mocked(g._isNativeDocumentHidden as () => boolean).mockReturnValue(true);
+		show();
+		expect(notice()).not.toBeNull();
+		expect(restart).not.toHaveBeenCalled();
+		vi.mocked(g._isNativeDocumentHidden as () => boolean).mockReturnValue(
+			false,
+		);
+		check();
+		expect(restart).toHaveBeenCalledOnce();
+		expect(notice()).toBeNull();
+	});
+
+	it.each(["paused", "hidden", "settings pending", "user paused", "disabled"])(
+		"waits while %s and restarts once that clears",
+		(condition) => {
+			const restart = startLate();
+			if (condition === "paused")
+				Object.defineProperty(video, "paused", { value: true });
+			if (condition === "hidden")
+				vi.mocked(g._isNativeDocumentHidden as () => boolean).mockReturnValue(
+					true,
+				);
+			if (condition === "settings pending")
+				state().HasResolvedAdsCountState = false;
+			const pauseIntent =
+				condition === "user paused"
+					? vi.spyOn(g, "_hasUserPauseIntent").mockReturnValue(true)
+					: null;
+			if (condition === "disabled") state().IsAdStrippingEnabled = false;
+			expect(T<() => boolean>("_restartPlayerStartedBeforeHooks")()).toBe(
+				false,
+			);
+			expect(restart).not.toHaveBeenCalled();
+			Object.defineProperty(video, "paused", { value: false });
+			vi.mocked(g._isNativeDocumentHidden as () => boolean).mockReturnValue(
+				false,
+			);
+			state().HasResolvedAdsCountState = true;
+			state().IsAdStrippingEnabled = true;
+			pauseIntent?.mockReturnValue(false);
+			expect(T<() => boolean>("_restartPlayerStartedBeforeHooks")()).toBe(true);
+			expect(T<() => boolean>("_restartPlayerStartedBeforeHooks")()).toBe(
+				false,
+			);
+			expect(restart).toHaveBeenCalledOnce();
+		},
+	);
+
+	it("stands down once a hooked player is seen, even if an unhooked one appears later", () => {
+		const restart = startLate();
+		worker.__TTVABGeneration = 2;
+		check();
+		worker = { postMessage: vi.fn() };
+		show();
+		expect(restart).not.toHaveBeenCalled();
+		expect(notice()).not.toBeNull();
+	});
+
+	it("never restarts a player when TTV AB started with the page", () => {
+		const restart = startLate();
+		(g._LateStartPlayerRestartState as { armed: boolean }).armed = false;
+		show();
+		expect(restart).not.toHaveBeenCalled();
+		expect(notice()).not.toBeNull();
+	});
 
 	it("requires stable evidence from the actual unhooked player and an explicit refresh click", () => {
 		g._S = { workers: [{ __TTVABGeneration: 9 }] };

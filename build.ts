@@ -459,7 +459,7 @@ function validateSharedDefinitions() {
 			`Manifest short_name must match the canonical short name: ${manifest.short_name || "missing"}`,
 		);
 	}
-	const expectedPermissions = ["storage"];
+	const expectedPermissions = ["scripting", "storage"];
 	if (
 		JSON.stringify([...(manifest.permissions || [])].sort()) !==
 		JSON.stringify(expectedPermissions)
