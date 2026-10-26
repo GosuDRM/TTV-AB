@@ -1307,6 +1307,16 @@ function _showWelcome() {
 				!document.body
 			)
 				return;
+			if (
+				typeof _isNativeDocumentHidden === "function"
+					? _isNativeDocumentHidden()
+					: document.visibilityState === "hidden"
+			) {
+				document.addEventListener("visibilitychange", _showWelcome, {
+					once: true,
+				});
+				return;
+			}
 			const toast = document.createElement("div");
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
