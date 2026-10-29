@@ -74,6 +74,21 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v26.0.0 - 2026-10-29
+
+- **Video Ads Beside the Stream** - Keep a blocked video ad beside the stream hidden and muted while the stream player is briefly unavailable, such as during a player restart, instead of showing it with sound for a moment and counting it twice.
+- **Generate Log for Frozen Tabs in Firefox** - Include a frozen Twitch tab's last saved debug log details when you opened the channel from elsewhere on Twitch, instead of leaving its section empty.
+- **Ad Break Timer After the Ads End** - Hide the Ad Break Timer once the ads in a break are over, instead of counting for as long as the ad-free replacement stream is kept, and show it again if more ads arrive in the same break.
+- **Blocked Ad Count Updates** - Update the blocked ad count and toolbar badge right after an ad is blocked, instead of up to 5 seconds later when watch time was being saved at the same moment.
+- **Ad Spoofing for Extra Ad Markers** - Keep skipping ad markers beyond an ad break's declared ad count, instead of reporting them on the next playlist update.
+- **Player Updates After a Failed Message** - Keep sending ad blocking updates to the player after one update cannot be delivered, instead of stopping all later updates until the player restarts.
+- **Saving Statistics Under Load** - Keep confirming saved statistics while the extension is busy, instead of rechecking them on every later save for up to 3 days.
+- **Ad Progress in Long Sessions** - Keep ad progress for at most 32 streams, so long sessions with many banner and preview players stop accumulating it.
+- **Debug Log Snapshots During Ad Recovery** - Save a snapshot only when post-ad recovery moves to a new step and include that step's log line, instead of saving repeated snapshots without the newest line.
+- **Restart Message for Streams Already Playing** - Record in debug logs whether the one-time player restart for a stream that was already playing was accepted, instead of always reporting a restart.
+- **Stream Return Diagnostics** - Record in debug logs why the stream stays on the ad-free replacement after an ad break, to help track down breaks where returning to the stream takes several minutes.
+- **Less Work on Twitch Pages** - Look up the stream player less often: not when the stream's own video starts playing or changes volume, and once instead of twice per playback check.
+
 ### v25.0.4 - 2026-10-26
 
 - **Client-Side Ad Request Details** - Record in debug logs the format of each client-side ad request, whether it came from the home page, and whether Twitch's ad server answered or the request was stopped first.
@@ -81,15 +96,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v25.0.3 - 2026-10-26
 
 - **Client-Side Ad Diagnostics** - Record in debug logs when Twitch announces or requests an ad that plays as a separate video beside the stream, and when an unrecognized video starts playing next to it, so any change in how Twitch delivers these ads shows up in logs. ([#98](https://github.com/GosuDRM/TTV-AB/issues/98))
-
-### v25.0.2 - 2026-10-26
-
-- **Streams Already Playing When You Install** - Restart the player once, without refreshing the tab, so ads are blocked on a stream that was already playing when you installed the extension. In Chrome, the extension now also starts in Twitch tabs that were already open. If the restart does not take effect, the refresh prompt still appears.
-- **Welcome Message in Background Tabs** - Show the welcome message once the Twitch tab is visible, instead of showing and hiding it while you were on another tab.
-- **Generate Log in Long Sessions** - Keep the error and ad break entries saved from trimmed history in Generate Log, instead of dropping them once a long session filled the log.
-- **Repeated Player Errors** - Save a diagnostic snapshot when a player error adds new details, instead of on every repeat of the same error.
-- **Generate Log During Ad Recovery** - Keep a tab's playback details in Generate Log when its post-ad recovery details cannot be read, instead of leaving all of them out.
-- **Ad Break Buffering Diagnostics** - Record in debug logs how often and when the stream buffers during each ad break and while it returns to the stream, to help track down buffering during some ad breaks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
