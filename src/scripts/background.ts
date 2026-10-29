@@ -1149,7 +1149,7 @@ function queueDiagnosticStoreWork(
 
 function retainDiagnosticCheckpoint(detail, sender) {
 	const tabId = sender?.tab?.id;
-	const pageUrl = diagnosticPageUrl(sender?.url);
+	const pageUrl = diagnosticPageUrl(sender?.tab?.url || sender?.url);
 	const capturedAt = detail?.capturedAt;
 	const context = getMessageData(detail?.context);
 	if (

@@ -1505,6 +1505,23 @@ describe("diagnostic checkpoints outside Twitch tabs", () => {
 		expect((await read()).ok).toBe(false);
 	});
 
+	it("matches the tab's current page after in-site navigation", async () => {
+		const firefoxSender = {
+			...sender,
+			url: "https://www.twitch.tv/",
+			tab: { id: 1, url: pageUrl },
+		};
+		expect(await retain(checkpoint(), firefoxSender)).toEqual({ ok: true });
+		expect((await read()).checkpoint).toEqual(checkpoint());
+
+		const navigatedSender = {
+			...firefoxSender,
+			tab: { id: 2, url: "https://www.twitch.tv/otherchannel" },
+		};
+		expect(await retain(checkpoint(), navigatedSender)).toEqual({ ok: false });
+		expect((await read(2)).ok).toBe(false);
+	});
+
 	it("clears the checkpoint when its tab closes", async () => {
 		await retain();
 		removed(1);
