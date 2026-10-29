@@ -801,6 +801,73 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		}
 	});
 
+	it("keeps a hidden ad silent while the stream player briefly cannot be found", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		const resolved = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+		const previousIncrement = g._incrementAdsBlocked;
+		let counted = 0;
+		g._incrementAdsBlocked = () => {
+			counted += 1;
+		};
+		try {
+			g._getPlayerAndState = resolved;
+			const ad = makeHiddenLabelAd("Video Advertisement");
+			const handle = T<(event: unknown) => void>(
+				"_handleIndependentVideoAdMediaEvent",
+			);
+			handle({ type: "play", target: ad.video });
+			expect(counted).toBe(1);
+
+			g._getPlayerAndState = () => ({ player: null });
+			handle({ type: "volumechange", target: ad.video });
+			expect(ad.video.style.getPropertyValue("display")).toBe("none");
+			expect(ad.video.muted).toBe(true);
+			expect(ad.video.volume).toBe(0);
+
+			g._getPlayerAndState = resolved;
+			handle({ type: "volumechange", target: ad.video });
+			expect(counted).toBe(1);
+
+			g._getPlayerAndState = () => ({
+				player: { getHTMLVideoElement: () => ad.video },
+			});
+			handle({ type: "volumechange", target: ad.video });
+			expect(ad.video.style.getPropertyValue("display")).toBe("");
+			expect(ad.video.muted).toBe(false);
+			expect(ad.video.volume).toBe(1);
+		} finally {
+			g._incrementAdsBlocked = previousIncrement;
+		}
+	});
+
+	it("does not look up the stream player for stream or unlabelled video events", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		const unlabelled = makeVideo(null);
+		unlabelled.video.src = "https://cdn.example.com/clip.mp4";
+		let lookups = 0;
+		g._getPlayerAndState = () => {
+			lookups += 1;
+			return { player: { getHTMLVideoElement: () => primary.video } };
+		};
+		const handle = T<(event: unknown) => void>(
+			"_handleIndependentVideoAdMediaEvent",
+		);
+		for (const type of ["play", "volumechange", "volumechange"]) {
+			handle({ type, target: primary.video });
+			handle({ type, target: unlabelled.video });
+		}
+		expect(lookups).toBe(0);
+
+		const ad = makeHiddenLabelAd("Video Advertisement");
+		handle({ type: "play", target: ad.video });
+		expect(lookups).toBe(1);
+		expect(ad.video.muted).toBe(true);
+	});
+
 	it("never hides labeled blob-backed media so a misdirected player lookup cannot black out the stream", () => {
 		const other = makeVideo(null);
 		g._getPlayerAndState = () => ({

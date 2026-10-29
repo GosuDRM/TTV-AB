@@ -851,15 +851,18 @@ function _restartPlayerStartedBeforeHooks() {
 		_UnhookedPlayerState.workerRef = null;
 		_UnhookedPlayerState.mediaKey = null;
 		_UnhookedPlayerState.noticeShownAt = 0;
+		const restarted =
+			_doPlayerTask(false, true, {
+				reason: "worker-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}) === true;
 		_log(
-			"Restarting the player once so ad blocking covers the stream that was already playing",
-			"info",
+			restarted
+				? "Restarting the player once so ad blocking covers the stream that was already playing"
+				: "Could not restart the stream that was already playing; the refresh prompt appears if ad blocking stays inactive",
+			restarted ? "info" : "warning",
 		);
-		_doPlayerTask(false, true, {
-			reason: "worker-recovery",
-			refreshAccessToken: true,
-			newMediaPlayerInstance: true,
-		});
 		return true;
 	} catch {
 		return false;
@@ -3299,12 +3302,14 @@ function _isIndependentVideoAd(media) {
 		return false;
 	}
 	if (_hasKnownIndependentVideoAdSource(media)) return true;
+	if (_hasBlobMediaSource(media) || !_hasIndependentVideoAdLabel(media)) {
+		return false;
+	}
 	const primaryMatch = _getPrimaryPlayerVideoMatch(media);
-	if (primaryMatch === true) return false;
 	return (
-		primaryMatch === false &&
-		!_hasBlobMediaSource(media) &&
-		_hasIndependentVideoAdLabel(media)
+		primaryMatch === false ||
+		(primaryMatch === null &&
+			_IndependentVideoAdSuppressionState.suppressedMedia.has(media))
 	);
 }
 
@@ -4965,14 +4970,13 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 			...playback,
 			...(reloadResult ? { reloadResult } : {}),
 		});
+		if (!transitionChanged) return;
+		_log(
+			`[Recovery] Post-ad ${phase}: ${transaction.mediaKey}; cycle ${transaction.cycleStartedAt}; page ${pageGeneration}; requests ${transaction.reloadRequestCount}; accepted ${transaction.acceptedReloadCount}; reload ${transaction.requiredNativeReloadAt}; native-ready ${transaction.nativeReloadConfirmedAt}; time ${transaction.lastCurrentTime}; frames ${transaction.lastTotalFrames}; suspended ${transaction.suspendedAt > 0}; visibility ${playback.suspendedReason}; current-video ${playback.currentVideo}; paused ${playback.paused}; ready ${playback.readyState}; network ${playback.networkState}; buffer ${playback.bufferDuration}; size ${playback.videoWidth}x${playback.videoHeight}; worker ${playback.workerGeneration}; result ${reloadResult || "none"}`,
+			phase === "source-failed" || phase === "exhausted" ? "warning" : "info",
+		);
 		if (typeof _checkpointPageDiagnostics === "function") {
 			_checkpointPageDiagnostics(true);
-		}
-		if (transitionChanged) {
-			_log(
-				`[Recovery] Post-ad ${phase}: ${transaction.mediaKey}; cycle ${transaction.cycleStartedAt}; page ${pageGeneration}; requests ${transaction.reloadRequestCount}; accepted ${transaction.acceptedReloadCount}; reload ${transaction.requiredNativeReloadAt}; native-ready ${transaction.nativeReloadConfirmedAt}; time ${transaction.lastCurrentTime}; frames ${transaction.lastTotalFrames}; suspended ${transaction.suspendedAt > 0}; visibility ${playback.suspendedReason}; current-video ${playback.currentVideo}; paused ${playback.paused}; ready ${playback.readyState}; network ${playback.networkState}; buffer ${playback.bufferDuration}; size ${playback.videoWidth}x${playback.videoHeight}; worker ${playback.workerGeneration}; result ${reloadResult || "none"}`,
-				phase === "source-failed" || phase === "exhausted" ? "warning" : "info",
-			);
 		}
 	} catch {}
 }
@@ -7870,7 +7874,7 @@ function _resetCleanPlaybackFailureSamples() {
 	observed.unreadySinceAt = 0;
 }
 
-function _isObservedCleanPlaybackFailure(video) {
+function _isObservedCleanPlaybackFailure(video, currentWorker = null) {
 	const observed = _PlayerBufferState.cleanPlayback;
 	return Boolean(
 		observed?.hadAdvancingPlayback &&
@@ -7879,7 +7883,8 @@ function _isObservedCleanPlaybackFailure(video) {
 				(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
 			observed.videoRef?.deref() === video &&
 			observed.workerRef?.deref() ===
-				_getPlayerCore(_getPlayerAndState().player)?.worker &&
+				(currentWorker ??
+					_getPlayerCore(_getPlayerAndState().player)?.worker) &&
 			!__TTVAB_STATE__.CurrentAdMediaKey &&
 			!__TTVAB_STATE__.CurrentAdChannel &&
 			!__TTVAB_STATE__.PinnedBackupPlayerType &&
@@ -7994,7 +7999,7 @@ function _checkCleanPlaybackFailure(player, playerState) {
 	}
 	observed.currentTime = currentTime;
 	observed.totalVideoFrames = frames;
-	if (!_isObservedCleanPlaybackFailure(video)) {
+	if (!_isObservedCleanPlaybackFailure(video, worker)) {
 		observed.unreadySinceAt = 0;
 		return false;
 	}
