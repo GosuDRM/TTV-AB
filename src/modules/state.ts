@@ -15,6 +15,7 @@ const _S = {
 };
 const _MAX_DORMANT_WORKER_REFS = 128;
 const _MAX_PLAYER_RELOAD_MEDIA_KEYS = 32;
+const _MAX_AD_POD_PROGRESS_MEDIA_KEYS = 32;
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
@@ -753,13 +754,13 @@ function _broadcastWorkers(
 	const sendMessages = (worker) => {
 		if (
 			!worker ||
+			typeof worker.postMessage !== "function" ||
 			seenWorkers.has(worker) ||
 			worker.__TTVABIntentionallyTerminated ||
 			worker.__TTVABCrashed
 		)
 			return false;
 		seenWorkers.add(worker);
-		let isAlive = true;
 		const getPlaybackContext = () =>
 			typeof _getWorkerPlaybackContext === "function"
 				? _getWorkerPlaybackContext(worker)
@@ -810,16 +811,10 @@ function _broadcastWorkers(
 						workerPlaybackContext = getPlaybackContext();
 					}
 				}
-				if (!_postWorkerBridgeMessage(worker, message)) {
-					isAlive = false;
-					break;
-				}
-			} catch {
-				isAlive = false;
-				break;
-			}
+				_postWorkerBridgeMessage(worker, message);
+			} catch {}
 		}
-		return isAlive;
+		return true;
 	};
 
 	for (const worker of _S.workers) {
@@ -1168,29 +1163,35 @@ function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
 	delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey];
 	__TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey] =
 		normalizedAt;
-	const protectedMediaKeys = new Set(
-		[
-			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
-			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey),
-			_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey),
-			_normalizeMediaKey(
-				typeof _getActivePictureInPicturePlaybackContext === "function"
-					? _getActivePictureInPicturePlaybackContext()?.MediaKey
-					: null,
-			),
-		].filter(Boolean),
-	);
-	const reloadMediaKeys = Object.keys(
+	_trimMediaKeyRecords(
 		__TTVAB_STATE__.LastPlayerReloadAtByMediaKey,
+		_MAX_PLAYER_RELOAD_MEDIA_KEYS,
+		[
+			__TTVAB_STATE__.PageMediaKey,
+			__TTVAB_STATE__.CurrentAdMediaKey,
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+			typeof _getActivePictureInPicturePlaybackContext === "function"
+				? _getActivePictureInPicturePlaybackContext()?.MediaKey
+				: null,
+		],
 	);
-	let excessMediaKeys = reloadMediaKeys.length - _MAX_PLAYER_RELOAD_MEDIA_KEYS;
-	for (const candidateMediaKey of reloadMediaKeys) {
+	return normalizedAt;
+}
+
+function _trimMediaKeyRecords(records, maxEntries, keptMediaKeys) {
+	const protectedMediaKeys = new Set(
+		keptMediaKeys
+			.map((mediaKey) => _normalizeMediaKey(mediaKey))
+			.filter(Boolean),
+	);
+	const mediaKeys = Object.keys(records);
+	let excessMediaKeys = mediaKeys.length - maxEntries;
+	for (const candidateMediaKey of mediaKeys) {
 		if (excessMediaKeys <= 0) break;
 		if (protectedMediaKeys.has(candidateMediaKey)) continue;
-		delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[candidateMediaKey];
+		delete records[candidateMediaKey];
 		excessMediaKeys--;
 	}
-	return normalizedAt;
 }
 
 function _syncPagePlaybackContext(options = {}) {
@@ -1364,7 +1365,18 @@ function _mergeAdPodProgress(value) {
 			: currentCycleStartedAt || incomingCycleStartedAt || Date.now(),
 		updatedAt: Date.now(),
 	};
+	delete __TTVAB_STATE__.AdPodProgressByMediaKey[mediaKey];
 	__TTVAB_STATE__.AdPodProgressByMediaKey[mediaKey] = entry;
+	_trimMediaKeyRecords(
+		__TTVAB_STATE__.AdPodProgressByMediaKey,
+		_MAX_AD_POD_PROGRESS_MEDIA_KEYS,
+		[
+			mediaKey,
+			__TTVAB_STATE__.PageMediaKey,
+			__TTVAB_STATE__.CurrentAdMediaKey,
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+		],
+	);
 	return entry;
 }
 
