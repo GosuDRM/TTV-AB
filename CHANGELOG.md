@@ -2,6 +2,29 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [26.0.0] - 2026-10-29
+
+Fixed
+
+- **Video Ads Beside the Stream** - Keep a blocked video ad beside the stream hidden and muted while the stream player is briefly unavailable, such as during a player restart, instead of showing it with sound for a moment and counting it twice.
+- **Generate Log for Frozen Tabs in Firefox** - Include a frozen Twitch tab's last saved debug log details when you opened the channel from elsewhere on Twitch, instead of leaving its section empty.
+- **Ad Break Timer After the Ads End** - Hide the Ad Break Timer once the ads in a break are over, instead of counting for as long as the ad-free replacement stream is kept, and show it again if more ads arrive in the same break.
+- **Blocked Ad Count Updates** - Update the blocked ad count and toolbar badge right after an ad is blocked, instead of up to 5 seconds later when watch time was being saved at the same moment.
+- **Ad Spoofing for Extra Ad Markers** - Keep skipping ad markers beyond an ad break's declared ad count, instead of reporting them on the next playlist update.
+- **Player Updates After a Failed Message** - Keep sending ad blocking updates to the player after one update cannot be delivered, instead of stopping all later updates until the player restarts.
+- **Saving Statistics Under Load** - Keep confirming saved statistics while the extension is busy, instead of rechecking them on every later save for up to 3 days.
+- **Ad Progress in Long Sessions** - Keep ad progress for at most 32 streams, so long sessions with many banner and preview players stop accumulating it.
+- **Debug Log Snapshots During Ad Recovery** - Save a snapshot only when post-ad recovery moves to a new step and include that step's log line, instead of saving repeated snapshots without the newest line.
+- **Restart Message for Streams Already Playing** - Record in debug logs whether the one-time player restart for a stream that was already playing was accepted, instead of always reporting a restart.
+
+Added
+
+- **Stream Return Diagnostics** - Record in debug logs why the stream stays on the ad-free replacement after an ad break, to help track down breaks where returning to the stream takes several minutes.
+
+Changed
+
+- **Less Work on Twitch Pages** - Look up the stream player less often: not when the stream's own video starts playing or changes volume, and once instead of twice per playback check.
+
 ## [25.0.4] - 2026-10-26
 
 Changed
