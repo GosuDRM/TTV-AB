@@ -519,6 +519,66 @@ describe("_notifyAdComplete", () => {
 		expect(payloads.every((payload) => payload.total_ads === 2)).toBe(true);
 	});
 
+	it("keeps ignoring markers past a full pod on later polls and in a replacement worker", async () => {
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		const reported: string[] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			for (const packet of JSON.parse(
+				String(options.body || "[]"),
+			) as GqlPacket[]) {
+				if (packet.variables?.input?.eventName !== "video_ad_impression")
+					continue;
+				reported.push(
+					JSON.parse(String(packet.variables.input.eventPayload || "{}")).ad_id,
+				);
+			}
+			return new Response(null, { status: 200 });
+		};
+		const playlist = [
+			"#EXTM3U",
+			adRange(1),
+			adRange(2),
+			adRange(3),
+			adRange(4),
+			adRange(5),
+		].join("\n");
+		const info: Record<string, unknown> = {
+			SpoofedAdIds: new Set<string>(),
+			ActiveBackupPlayerType: "site",
+		};
+
+		await notify(playlist, info);
+		await notify(playlist, info);
+		expect(reported).toEqual(["stitched-ad-1", "stitched-ad-2"]);
+
+		const pod = info.CurrentAdPod as {
+			key: string;
+			length: number;
+			adIds: Set<string>;
+			maxPosition: number;
+			zeroPosition: boolean;
+		};
+		const replacement: Record<string, unknown> = {
+			SpoofedAdIds: new Set<string>(["stitched-ad-1", "stitched-ad-2"]),
+			ObservedAdPodIds: new Set(info.ObservedAdPodIds as Set<string>),
+			CurrentAdPod: {
+				...pod,
+				adIds: new Set(pod.adIds),
+				spoofedAdIds: new Set<string>(),
+				completeSent: false,
+			},
+			ActiveBackupPlayerType: "site",
+		};
+		await notify(playlist, replacement);
+		expect(reported).toEqual(["stitched-ad-1", "stitched-ad-2"]);
+	});
+
 	it.each([
 		{
 			label: "a preroll pod followed by an eight-ad midroll pod",
