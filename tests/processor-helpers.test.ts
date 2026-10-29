@@ -466,6 +466,50 @@ describe("playlist scan fast paths", () => {
 		}
 	});
 
+	it("logs each native return wait reason once per break and keeps the latest", () => {
+		const note = T<(info: Record<string, unknown>, reason: string) => void>(
+			"_noteNativeReturnWait",
+		);
+		const latest = T<
+			(info: Record<string, unknown>) => { reason: string } | null
+		>("_getNativeReturnWait");
+		const previousLog = g._log;
+		const messages: string[] = [];
+		g._log = (message: string) => {
+			messages.push(String(message));
+		};
+		try {
+			const info = makeInfo({ VisibleAdStartedAt: 1000 });
+			note(info, "confirming the ad end");
+			note(info, "confirming the ad end");
+			note(info, "checking that Twitch's own stream stays clean");
+			note(info, "confirming the ad end");
+			expect(messages).toEqual([
+				"[Trace] Native return waiting: confirming the ad end",
+				"[Trace] Native return waiting: checking that Twitch's own stream stays clean",
+			]);
+			expect(latest(info)?.reason).toBe("confirming the ad end");
+
+			for (let index = 0; index < 20; index++) note(info, `reason ${index}`);
+			expect(messages).toHaveLength(8);
+
+			info.VisibleAdStartedAt = 2000;
+			expect(latest(info)).toBeNull();
+			note(info, "confirming the ad end");
+			expect(messages.at(-1)).toBe(
+				"[Trace] Native return waiting: confirming the ad end",
+			);
+			expect(messages).toHaveLength(9);
+
+			const noCycle = makeInfo({ VisibleAdStartedAt: 0 });
+			note(noCycle, "confirming the ad end");
+			expect(latest(noCycle)).toBeNull();
+			expect(messages).toHaveLength(9);
+		} finally {
+			g._log = previousLog;
+		}
+	});
+
 	it("keeps segments the playlist still lists when evicting old ownership", () => {
 		const state = getState();
 		const previousSegmentCodecOwners = state.SegmentCodecOwners;
