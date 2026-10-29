@@ -466,6 +466,37 @@ describe("playlist scan fast paths", () => {
 		}
 	});
 
+	it("keeps segments the playlist still lists when evicting old ownership", () => {
+		const state = getState();
+		const previousSegmentCodecOwners = state.SegmentCodecOwners;
+		state.SegmentCodecOwners = new Map();
+		const remember = T<
+			(
+				info: Record<string, unknown>,
+				text: string,
+				codecFamily: string,
+				exactSegmentUrls: string[],
+			) => boolean
+		>("_rememberSegmentCodecOwnership");
+		const info = makeInfo();
+		const segment = (index: number) =>
+			`https://edge.example/live/segment-${index}.ts`;
+
+		try {
+			for (let index = 0; index < 1000; index++)
+				remember(info, "#EXTM3U", "avc", [segment(index)]);
+			remember(info, "#EXTM3U", "avc", [segment(0)]);
+			remember(info, "#EXTM3U", "avc", [segment(1000)]);
+			const owners = state.SegmentCodecOwners as Map<string, unknown>;
+			expect(owners.size).toBe(1000);
+			expect(owners.has(segment(0))).toBe(true);
+			expect(owners.has(segment(1))).toBe(false);
+			expect(owners.has(segment(1000))).toBe(true);
+		} finally {
+			state.SegmentCodecOwners = previousSegmentCodecOwners;
+		}
+	});
+
 	it("marks malformed media duration ownership for the existing fallback scan", () => {
 		const collection: { urls: string[]; isComplete: boolean } = {
 			urls: [],

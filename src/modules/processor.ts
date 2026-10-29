@@ -5620,6 +5620,7 @@ function _rememberSegmentCodecOwnership(
 					_normalizeMediaKey(previous.mediaKey) !==
 						_normalizeMediaKey(info.MediaKey)),
 		);
+		__TTVAB_STATE__.SegmentCodecOwners.delete(url);
 		__TTVAB_STATE__.SegmentCodecOwners.set(
 			url,
 			conflicts
