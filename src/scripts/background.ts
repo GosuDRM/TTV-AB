@@ -1271,6 +1271,7 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 			}
 		},
 		flushId ? `${message.type}:${flushId}` : null,
+		message.type === "ttvab-confirm-counter-flush",
 	)
 		.then((response) => {
 			sendResponse(response);

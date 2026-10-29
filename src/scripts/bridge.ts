@@ -387,6 +387,7 @@ let pendingWatchSeconds = createChannelsMap();
 let pendingWatchIntervals = createChannelsMap();
 let pendingAdMeasurements = new Map();
 let flushTimeout = null;
+let flushDueAt = 0;
 let didMigrateLegacyPersistedCounterFlushes = false;
 const retryFlushEntries = new Map();
 const MAX_IN_FLIGHT_PERSIST_REQUESTS = 64;
@@ -864,7 +865,10 @@ function sendPersistPayload(payload, onSuccess, onFailure) {
 	);
 	const requestKey = flushId ? `${payload.type}:${flushId}` : Symbol();
 	if (inFlightPersistRequests.has(requestKey)) return false;
-	if (inFlightPersistRequests.size >= MAX_IN_FLIGHT_PERSIST_REQUESTS) {
+	if (
+		payload.type !== "ttvab-confirm-counter-flush" &&
+		inFlightPersistRequests.size >= MAX_IN_FLIGHT_PERSIST_REQUESTS
+	) {
 		onFailure?.("Counter persistence busy");
 		return false;
 	}
@@ -1061,16 +1065,19 @@ function scheduleFlush(delay = FLUSH_DELAY_MS) {
 		discardCounterWorkForTurboMode();
 		return;
 	}
-	if (flushTimeout) return;
-	flushTimeout = setTimeout(
-		() => {
-			flushTimeout = null;
-			flushCounters();
-		},
-		extensionContextInvalidated
-			? ORPHANED_COUNTER_FLUSH_DELAY_MS
-			: Math.max(0, delay),
-	);
+	const flushDelay = extensionContextInvalidated
+		? ORPHANED_COUNTER_FLUSH_DELAY_MS
+		: Math.max(0, delay);
+	const dueAt = Date.now() + flushDelay;
+	if (flushTimeout) {
+		if (flushDueAt <= dueAt) return;
+		clearTimeout(flushTimeout);
+	}
+	flushDueAt = dueAt;
+	flushTimeout = setTimeout(() => {
+		flushTimeout = null;
+		flushCounters();
+	}, flushDelay);
 }
 
 function flushCounters(options: { fireAndForget?: boolean } = {}) {

@@ -496,6 +496,43 @@ describe("bounded counter persistence admission", () => {
 		expect(storageData.ttvAdsBlocked).toBe(0);
 	});
 
+	it("admits a flush confirmation while the queue is full", async () => {
+		expect((await send("flush:test:confirm-full")).ok).toBe(true);
+		expect(
+			Object.hasOwn(
+				storageData.ttvUnconfirmedCounterFlushes as object,
+				"flush:test:confirm-full",
+			),
+		).toBe(true);
+		const held = holdStorageRead();
+		const requests = Array.from({ length: 64 }, (_, index) =>
+			send(`flush:test:confirm-full-${index}`),
+		);
+		let confirmation: Promise<{ ok: boolean }> = Promise.resolve({
+			ok: false,
+		});
+		try {
+			await held.ready;
+			expect((await send("flush:test:confirm-overflow")).ok).toBe(false);
+			confirmation = send(
+				"flush:test:confirm-full",
+				"ttvab-confirm-counter-flush",
+			);
+			expect(g.pendingPersistTaskCount).toBe(65);
+		} finally {
+			held.release();
+			await Promise.all(requests);
+			held.get.mockRestore();
+		}
+		expect((await confirmation).ok).toBe(true);
+		expect(
+			Object.hasOwn(
+				storageData.ttvUnconfirmedCounterFlushes as object,
+				"flush:test:confirm-full",
+			),
+		).toBe(false);
+	});
+
 	it("rejects duplicate pending IDs without retaining additional response waiters", async () => {
 		const held = holdStorageRead();
 		const first = send("flush:test:pending-duplicate");
