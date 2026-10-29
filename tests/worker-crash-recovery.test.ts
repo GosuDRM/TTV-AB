@@ -120,6 +120,28 @@ describe("refresh recovery for a player created before interception", () => {
 		expect(refresh).not.toHaveBeenCalled();
 	});
 
+	it("says whether the one restart was accepted", () => {
+		const restart = startLate();
+		restart.mockReturnValue(false);
+		const log = vi.spyOn(g, "_log").mockImplementation(() => {});
+		check();
+		expect(restart).toHaveBeenCalledOnce();
+		const messages = log.mock.calls.map(([message]) => String(message));
+		expect(messages).toContainEqual(
+			expect.stringContaining("Could not restart the stream"),
+		);
+		expect(messages).not.toContainEqual(
+			expect.stringContaining("Restarting the player once"),
+		);
+		vi.advanceTimersByTime(5000);
+		check();
+		expect(notice()).toBeNull();
+		vi.advanceTimersByTime(5000);
+		check();
+		expect(notice()?.textContent).toContain("start ad blocking");
+		expect(restart).toHaveBeenCalledOnce();
+	});
+
 	it("replaces a prompt already shown while waiting with the restart", () => {
 		const restart = startLate();
 		vi.mocked(g._isNativeDocumentHidden as () => boolean).mockReturnValue(true);

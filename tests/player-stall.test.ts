@@ -8105,3 +8105,134 @@ describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
 		expect(taskCalls).toEqual([]);
 	});
 });
+
+describe("_checkCleanPlaybackFailure player lookups", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(700000);
+		(g._PlayerBufferState as Record<string, unknown>).cleanPlayback = null;
+		Object.assign(g.__TTVAB_STATE__ as Record<string, unknown>, {
+			PinnedBackupPlayerType: null,
+			PageMediaKey: "live:testchannel",
+			PageChannel: "testchannel",
+			PageMediaType: "live",
+			PagePlaybackContextGeneration: 3,
+			IsAdStrippingEnabled: true,
+		});
+		vi.spyOn(g, "_getPlaybackContextFromUrl").mockReturnValue({
+			MediaKey: "live:testchannel",
+		});
+		vi.spyOn(g, "_isNativeDocumentHidden").mockReturnValue(false);
+		T<() => void>("_clearRecordedUserPauseIntent")();
+		T<() => void>("_clearSecondaryPlayerHandoff")();
+		T<() => void>("_clearActivePictureInPicturePlaybackContext")();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("reuses the tick's player and still rebuilds a live player that went empty", () => {
+		let empty = false;
+		let position = 50;
+		const video = document.createElement("video");
+		Object.defineProperties(video, {
+			currentTime: { get: () => (empty ? 0 : position) },
+			paused: { get: () => false },
+			ended: { value: false },
+			readyState: { get: () => (empty ? 0 : 4) },
+			networkState: { get: () => (empty ? 0 : 2) },
+			videoWidth: { get: () => (empty ? 0 : 1920) },
+			buffered: {
+				get: () =>
+					empty
+						? { length: 0 }
+						: { length: 1, start: () => 0, end: () => position + 2 },
+			},
+		});
+		document.body.append(video);
+		const worker = {
+			__TTVABGeneration: 2,
+			__TTVABPageMediaKey: "live:testchannel",
+			__TTVABLastPongAt: Date.now(),
+		};
+		const player = {
+			core: { worker },
+			getHTMLVideoElement: () => video,
+			isPaused: () => false,
+		};
+		const playerState = {
+			props: { content: { type: "live", channelLogin: "testchannel" } },
+			setSrc: () => {},
+		};
+		const lookup = vi.spyOn(g, "_getPlayerAndState");
+		const task = vi.spyOn(g, "_doPlayerTask").mockReturnValue(true);
+		const check = T<(player: unknown, state: unknown) => boolean>(
+			"_checkCleanPlaybackFailure",
+		);
+		const tick = () => {
+			worker.__TTVABLastPongAt = Date.now();
+			return check(player, playerState);
+		};
+
+		for (let index = 0; index < 12; index += 1) {
+			expect(tick()).toBe(false);
+			vi.advanceTimersByTime(600);
+			position += 0.6;
+		}
+		empty = true;
+		for (let index = 0; index < 20; index += 1) {
+			expect(tick()).toBe(false);
+			vi.advanceTimersByTime(600);
+		}
+		expect(tick()).toBe(true);
+		expect(task).toHaveBeenCalledExactlyOnceWith(false, true, {
+			reason: "buffer-recovery",
+			mediaKey: "live:testchannel",
+		});
+		expect(lookup).not.toHaveBeenCalled();
+		video.remove();
+	});
+});
+
+describe("_recordPostAdRecoveryTransition checkpoints", () => {
+	it("saves a checkpoint after logging each change, not on repeats", () => {
+		const events: string[] = [];
+		const previousCheckpoint = g._checkpointPageDiagnostics;
+		const diagnostics = g._PostAdRecoveryDiagnostics as Record<string, unknown>;
+		for (const key of Object.keys(diagnostics)) delete diagnostics[key];
+		g._log = (message: string) => {
+			if (String(message).startsWith("[Recovery]")) events.push("log");
+		};
+		g._checkpointPageDiagnostics = (force: boolean) => {
+			events.push(`checkpoint:${force}`);
+			return true;
+		};
+		const transaction = g._PostAdRecoveryTransactionState as Record<
+			string,
+			unknown
+		>;
+		Object.assign(transaction, {
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 90000,
+		});
+		const record = T<(phase: string, result?: string | null) => void>(
+			"_recordPostAdRecoveryTransition",
+		);
+		try {
+			record("loading", "pending");
+			record("loading", "pending");
+			expect(events).toEqual(["log", "checkpoint:true"]);
+			record("source-ready", "success");
+			expect(events).toEqual([
+				"log",
+				"checkpoint:true",
+				"log",
+				"checkpoint:true",
+			]);
+			expect(diagnostics.phase).toBe("source-ready");
+		} finally {
+			g._checkpointPageDiagnostics = previousCheckpoint;
+			for (const key of Object.keys(diagnostics)) delete diagnostics[key];
+		}
+	});
+});
