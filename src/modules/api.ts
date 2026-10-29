@@ -603,7 +603,6 @@ function _assignAdPods(info: TTVABStreamInfo, matches, fallbackLength) {
 				: null;
 		let pod = info.CurrentAdPod;
 		if (!pod?.adIds.has(adId)) {
-			if (seenBefore?.has(adId)) continue;
 			const length =
 				Number.parseInt(attr["X-TV-TWITCH-AD-POD-LENGTH"], 10) ||
 				fallbackLength;
@@ -620,6 +619,7 @@ function _assignAdPods(info: TTVABStreamInfo, matches, fallbackLength) {
 				pods.set(adId, null);
 				continue;
 			}
+			if (seenBefore?.has(adId)) continue;
 			if (!pod || pod.key !== key || podIsFull) {
 				pod = {
 					key,
