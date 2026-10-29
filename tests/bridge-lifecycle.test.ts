@@ -952,6 +952,37 @@ describe("bounded in-flight persistence", () => {
 		}
 	});
 
+	it("still sends a flush confirmation while persistence requests are at capacity", () => {
+		const inFlight = g.inFlightPersistRequests as Set<unknown>;
+		for (let index = 0; index < 64; index++) inFlight.add(Symbol());
+		const send = g.sendPersistPayload as (
+			payload: unknown,
+			onSuccess?: (response: unknown) => void,
+			onFailure?: (error: string) => void,
+		) => boolean;
+		const failure = vi.fn();
+		expect(
+			send(
+				{
+					type: "ttvab-persist-counters",
+					detail: { ...makeExitFlush(), flushId: "flush:test:at-capacity" },
+				},
+				undefined,
+				failure,
+			),
+		).toBe(false);
+		expect(failure).toHaveBeenCalledWith("Counter persistence busy");
+		expect(
+			send({
+				type: "ttvab-confirm-counter-flush",
+				detail: { flushId: "flush:test:at-capacity" },
+			}),
+		).toBe(true);
+		expect(runtimeMessages.map((message) => message.type)).toEqual([
+			"ttvab-confirm-counter-flush",
+		]);
+	});
+
 	it("releases failed requests so the exact journaled payload can retry", () => {
 		vi.useFakeTimers();
 		vi.spyOn(console, "error").mockImplementation(() => {});
@@ -2130,6 +2161,48 @@ describe("statistics transport hardening", () => {
 			).not.toThrow();
 		} finally {
 			restore();
+		}
+	});
+
+	it("sends a blocked ad without waiting for a pending watch-time flush", () => {
+		vi.useFakeTimers();
+		try {
+			handlePageMessage({
+				type: "ttvab-watch-time",
+				detail: { channel: "somestreamer", seconds: 30 },
+			});
+			vi.advanceTimersByTime(1000);
+			expect(runtimeMessages).toEqual([]);
+			handlePageMessage({
+				type: "ttvab-ad-blocked",
+				detail: { count: 3, delta: 1, channel: "somestreamer" },
+			});
+			vi.advanceTimersByTime(200);
+			expect(runtimeMessages[0]?.type).toBe("ttvab-persist-counters");
+			expect(runtimeMessages[0]?.detail).toMatchObject({
+				adsDelta: 1,
+				watchDeltas: { somestreamer: 30 },
+			});
+			const sent = runtimeMessages.length;
+			handlePageMessage({
+				type: "ttvab-watch-time",
+				detail: { channel: "somestreamer", seconds: 5 },
+			});
+			handlePageMessage({
+				type: "ttvab-ad-blocked",
+				detail: { count: 4, delta: 1, channel: "somestreamer" },
+			});
+			handlePageMessage({
+				type: "ttvab-watch-time",
+				detail: { channel: "somestreamer", seconds: 5 },
+			});
+			vi.advanceTimersByTime(200);
+			expect(runtimeMessages[sent]?.detail).toMatchObject({
+				adsDelta: 1,
+				watchDeltas: { somestreamer: 10 },
+			});
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 
