@@ -68,6 +68,11 @@ function _updateAdTimerOverlay() {
 			state?.AdPodProgressByMediaKey?.[mediaKey]?.cycleStartedAt,
 		);
 		const now = Date.now();
+		const adsEndedInHold = Boolean(
+			_normalizeMediaKey(state?.LastAdEndedMediaKey) === mediaKey &&
+				Number(state?.LastAdEndedCycleStartedAt) === cycleStartedAt &&
+				Number(state?.LastAdEndedAt) >= (Number(state?.LastAdDetectedAt) || 0),
+		);
 		if (
 			!_adTimerEnabled ||
 			state?.IsAdStrippingEnabled !== true ||
@@ -76,6 +81,7 @@ function _updateAdTimerOverlay() {
 			!Number.isFinite(cycleStartedAt) ||
 			cycleStartedAt <= 0 ||
 			cycleStartedAt > now ||
+			adsEndedInHold ||
 			!document.body
 		) {
 			_clearAdTimerOverlay();

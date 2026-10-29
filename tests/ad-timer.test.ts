@@ -402,6 +402,34 @@ describe("ad break timer updates", () => {
 		expect(vi.getTimerCount()).toBe(1);
 	});
 
+	it("stops when the ads end while the clean stream is held and returns if they come back", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const cycleStartedAt = now - 83000;
+		state.LastAdDetectedAt = cycleStartedAt;
+		toggle(true);
+		expect(overlay()?.textContent).toBe("Ad break · 1:23");
+
+		Object.assign(state, {
+			LastAdEndedMediaKey: "live:example",
+			LastAdEndedCycleStartedAt: cycleStartedAt,
+			LastAdEndedAt: Date.now(),
+		});
+		vi.advanceTimersByTime(1100);
+		expect(overlay()).toBeNull();
+		vi.advanceTimersByTime(600000);
+		g._updateAdTimerOverlay();
+		expect(overlay()).toBeNull();
+
+		state.LastAdDetectedAt = Date.now();
+		g._updateAdTimerOverlay();
+		expect(overlay()).not.toBeNull();
+
+		state.LastAdEndedCycleStartedAt = cycleStartedAt - 1000;
+		state.LastAdDetectedAt = cycleStartedAt;
+		g._updateAdTimerOverlay();
+		expect(overlay()).not.toBeNull();
+	});
+
 	it("disappears within a second of the break ending", () => {
 		toggle(true);
 		g.__TTVAB_STATE__.CurrentAdMediaKey = null;
