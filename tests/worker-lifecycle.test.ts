@@ -17787,3 +17787,44 @@ describe("worker bootstrap source-loading self-heal invariant", () => {
 		expect(usesImportScripts || usesEvalWithGuard).toBe(true);
 	});
 });
+
+describe("worker command broadcast", () => {
+	it("keeps a worker after a command it cannot receive", () => {
+		const shared = g._S as {
+			workers: unknown[];
+			workerRefs: WeakRef<object>[];
+		};
+		const savedWorkers = shared.workers;
+		const savedWorkerRefs = shared.workerRefs;
+		const received: unknown[] = [];
+		const worker = {
+			postMessage: vi.fn((envelope: { message?: { key?: string } }) => {
+				if (envelope.message?.key === "UpdateClientVersion")
+					throw new DOMException("could not be cloned", "DataCloneError");
+				received.push(envelope.message?.key);
+			}),
+		};
+		const terminated = {
+			postMessage: vi.fn(),
+			__TTVABIntentionallyTerminated: true,
+		};
+		shared.workers = [worker, terminated];
+		shared.workerRefs = [];
+		const broadcast = T<(messages: unknown) => void>("_broadcastWorkers");
+		try {
+			broadcast([
+				{ value: true },
+				{ key: "UpdateClientVersion", value: "unclonable" },
+				{ key: "UpdateToggleState", value: true },
+			]);
+			expect(received).toEqual(["UpdateToggleState"]);
+			expect(shared.workers).toEqual([worker]);
+			broadcast({ key: "UpdateToggleState", value: false });
+			expect(received).toEqual(["UpdateToggleState", "UpdateToggleState"]);
+			expect(terminated.postMessage).not.toHaveBeenCalled();
+		} finally {
+			shared.workers = savedWorkers;
+			shared.workerRefs = savedWorkerRefs;
+		}
+	});
+});

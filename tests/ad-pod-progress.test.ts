@@ -165,6 +165,33 @@ describe("main-owned declared ad pod progress", () => {
 		).toBe(false);
 	});
 
+	it("keeps at most 32 media while protecting the page and the latest one", () => {
+		const merge = T<
+			(value: Record<string, unknown>) => Record<string, unknown> | null
+		>("_mergeAdPodProgress");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaKey = "live:pagechannel";
+		const progress = (channel: string) => ({
+			mediaType: "live",
+			channelName: channel,
+			mediaKey: `live:${channel}`,
+			expectedPodLength: 1,
+			cycleStartedAt: 1000,
+			adIds: [`${channel}-ad`],
+		});
+
+		merge(progress("pagechannel"));
+		for (let index = 0; index < 40; index++) merge(progress(`banner${index}`));
+
+		const entries = state.AdPodProgressByMediaKey as Record<string, unknown>;
+		expect(Object.keys(entries)).toHaveLength(32);
+		expect(entries).toHaveProperty(["live:pagechannel"]);
+		expect(entries).toHaveProperty(["live:banner39"]);
+		expect(entries).not.toHaveProperty(["live:banner0"]);
+		expect(entries).not.toHaveProperty(["live:banner8"]);
+		expect(entries).toHaveProperty(["live:banner9"]);
+	});
+
 	it("replaces an older cycle and ignores late progress from it", () => {
 		const merge = T<
 			(value: Record<string, unknown>) => Record<string, unknown> | null
