@@ -1773,7 +1773,21 @@ async function _isAdEndStable(
 			}
 			return info.IsHoldingBackupAfterAd ? "ended" : "ended-with-backup-hold";
 		}
-		if (exactNativeCandidateState === "pending") return "wait";
+		if (exactNativeCandidateState === "pending") {
+			_noteNativeReturnWait(
+				info,
+				typeof candidateText !== "string" ||
+					!_playlistHasMediaSegments(candidateText)
+					? "Twitch's own playlist has no media segments"
+					: _hasPlaylistAdMarkers(candidateText) ||
+							_playlistHasKnownAdSegments(candidateText, {
+								includeCached: false,
+							})
+						? "Twitch's own playlist still lists ads"
+						: "confirming Twitch's own playlist stays clean",
+			);
+			return "wait";
+		}
 	} else {
 		_resetNativeRecoveryCandidateState(info);
 	}
@@ -1789,10 +1803,15 @@ async function _isAdEndStable(
 		candidateHasRequestIdentity &&
 		!exactNativeRecoveryOwned
 	) {
+		_noteNativeReturnWait(
+			info,
+			"the player is not requesting a playlist from Twitch's current stream catalog",
+		);
 		return "wait";
 	}
 
 	if (!fastPathReady && !slowPathReady) {
+		_noteNativeReturnWait(info, "confirming the ad end");
 		return "wait";
 	}
 
@@ -1884,6 +1903,10 @@ async function _isAdEndStable(
 			info._LoggedWhitelistByType = new Set();
 		}
 		const progressKey = `pod-incomplete:${observedPodAds}/${expectedPodLength}`;
+		_noteNativeReturnWait(
+			info,
+			`the declared ad pod is still active (${observedPodAds}/${expectedPodLength})`,
+		);
 		if (!info._LoggedWhitelistByType.has(progressKey)) {
 			info._LoggedWhitelistByType.add(progressKey);
 			_log(
@@ -1892,6 +1915,10 @@ async function _isAdEndStable(
 			);
 		}
 	} else {
+		_noteNativeReturnWait(
+			info,
+			"checking that Twitch's own stream stays clean",
+		);
 		hasNativeRecoveryReady = await _awaitM3U8RequestContext(
 			_canReloadNativePlayerAfterAd(
 				info,
@@ -2424,6 +2451,34 @@ const _ServedEndAheadLogs = new WeakMap<
 	object,
 	{ key: string; at: number; leadMs: number }
 >();
+
+const _NativeReturnWaits = new WeakMap<
+	object,
+	{ cycleStartedAt: number; reason: string; loggedReasons: Set<string> }
+>();
+
+function _noteNativeReturnWait(info: Partial<TTVABStreamInfo>, reason) {
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	if (!info || cycleStartedAt <= 0) return;
+	const previous = _NativeReturnWaits.get(info);
+	const wait =
+		previous?.cycleStartedAt === cycleStartedAt
+			? previous
+			: { cycleStartedAt, reason, loggedReasons: new Set<string>() };
+	wait.reason = reason;
+	_NativeReturnWaits.set(info, wait);
+	if (wait.loggedReasons.has(reason) || wait.loggedReasons.size >= 8) return;
+	wait.loggedReasons.add(reason);
+	_log(`[Trace] Native return waiting: ${reason}`, "info");
+}
+
+function _getNativeReturnWait(info: Partial<TTVABStreamInfo>) {
+	const wait = _NativeReturnWaits.get(info);
+	return wait &&
+		wait.cycleStartedAt === Math.max(0, Number(info?.VisibleAdStartedAt) || 0)
+		? wait
+		: null;
+}
 
 function _logServedEndAheadOfClock(
 	info: Partial<TTVABStreamInfo>,
@@ -4584,6 +4639,13 @@ async function _canReloadNativePlayerAfterAd(
 		: ownedNativeRecoveryTarget?.playlistUrl || null;
 	const probeEpoch = Number(info.NativeRecoveryProbeEpoch) || 0;
 	const probeToken = {};
+	const cancelProbe = () => {
+		_noteNativeReturnWait(
+			info,
+			"a native check was cancelled before it finished",
+		);
+		return false;
+	};
 	const probeInvalidated = () =>
 		info._NativeRecoveryProbeToken !== probeToken ||
 		(Number(info.NativeRecoveryProbeEpoch) || 0) !== probeEpoch ||
@@ -4622,7 +4684,7 @@ async function _canReloadNativePlayerAfterAd(
 	info._NativeRecoveryProbeToken = probeToken;
 
 	try {
-		if (probeInvalidated()) return false;
+		if (probeInvalidated()) return cancelProbe();
 		if (!probeStreamUrl) {
 			const tokenRes = await _getToken(
 				info,
@@ -4633,7 +4695,7 @@ async function _canReloadNativePlayerAfterAd(
 				requestSignal,
 			);
 			if (probeInvalidated()) {
-				return false;
+				return cancelProbe();
 			}
 			if (tokenRes.status !== 200) {
 				_resetNativeRecoveryReadyState(info, true);
@@ -4647,7 +4709,7 @@ async function _canReloadNativePlayerAfterAd(
 
 			const token = await tokenRes.json();
 			if (probeInvalidated()) {
-				return false;
+				return cancelProbe();
 			}
 			const extractedToken = _extractPlaybackAccessToken(token);
 			const sig = extractedToken?.signature;
@@ -4666,6 +4728,10 @@ async function _canReloadNativePlayerAfterAd(
 			if (!usherUrl) {
 				_resetNativeRecoveryReadyState(info, true);
 				_markNativeRecoveryProbeFailed(info);
+				_noteNativeReturnWait(
+					info,
+					"could not build Twitch's stream address for a native check",
+				);
 				return false;
 			}
 
@@ -4673,7 +4739,7 @@ async function _canReloadNativePlayerAfterAd(
 				signal: requestSignal,
 			});
 			if (probeInvalidated()) {
-				return false;
+				return cancelProbe();
 			}
 			if (encRes.status !== 200) {
 				_resetNativeRecoveryReadyState(info, true);
@@ -4687,7 +4753,7 @@ async function _canReloadNativePlayerAfterAd(
 
 			const encM3u8 = await encRes.text();
 			if (probeInvalidated()) {
-				return false;
+				return cancelProbe();
 			}
 			const targetResolution =
 				resolution ||
@@ -4702,6 +4768,10 @@ async function _canReloadNativePlayerAfterAd(
 			if (!streamUrl) {
 				_resetNativeRecoveryReadyState(info, true);
 				_markNativeRecoveryProbeFailed(info);
+				_noteNativeReturnWait(
+					info,
+					"Twitch's stream catalog has no matching quality for a native check",
+				);
 				return false;
 			}
 			probeStreamUrl = String(streamUrl);
@@ -4719,7 +4789,7 @@ async function _canReloadNativePlayerAfterAd(
 			signal: requestSignal,
 		});
 		if (probeInvalidated()) {
-			return false;
+			return cancelProbe();
 		}
 		if (streamRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
@@ -4733,7 +4803,7 @@ async function _canReloadNativePlayerAfterAd(
 
 		const nativeM3u8 = await streamRes.text();
 		if (probeInvalidated()) {
-			return false;
+			return cancelProbe();
 		}
 		if (!_playlistHasMediaSegments(nativeM3u8)) {
 			_resetNativeRecoveryReadyState(info, true);
@@ -4806,6 +4876,10 @@ async function _canReloadNativePlayerAfterAd(
 			return false;
 		}
 		if (!liveSequenceAdvanced) {
+			_noteNativeReturnWait(
+				info,
+				"waiting for Twitch's own playlist to advance during a native check",
+			);
 			return false;
 		}
 
@@ -4823,7 +4897,7 @@ async function _canReloadNativePlayerAfterAd(
 		return true;
 	} catch (err) {
 		if (probeInvalidated()) {
-			return false;
+			return cancelProbe();
 		}
 		_resetNativeRecoveryReadyState(info, true);
 		_markNativeRecoveryProbeFailed(info);
@@ -7848,7 +7922,15 @@ async function _processM3U8Core(
 			) {
 				info.LastSilentBackupHoldLogAt = now;
 				info.LastSilentBackupHoldLogMessage = holdLogMessage;
-				_log(holdLogMessage, holdMaxReached || hasAds ? "warning" : "info");
+				const nativeReturnWait = hasAds ? null : _getNativeReturnWait(info);
+				_log(
+					holdMaxReached && hasAds
+						? `${holdLogMessage} (Twitch's own playlist still lists ads)`
+						: nativeReturnWait
+							? `${holdLogMessage} (waiting: ${nativeReturnWait.reason})`
+							: holdLogMessage,
+					holdMaxReached || hasAds ? "warning" : "info",
+				);
 			}
 			const forceRefreshAt =
 				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
