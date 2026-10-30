@@ -2663,6 +2663,47 @@ describe("empty hold playlist continuity", () => {
 		);
 	});
 
+	it("tracks each player's request separately when two players poll the same backup", async () => {
+		const { context, info, serve } = setup();
+		const log = vi.fn();
+		context._log = log;
+		const secondUrl = nativeUrl.replace("native.m3u8", "native-360.m3u8");
+		info.Urls[secondUrl] = { Resolution: "640x360", Codecs: codec };
+		const dated = (sequence: number, time: string) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${time}Z\n#EXTINF:`,
+			);
+		const serveSecond = async (text: string) => {
+			context._processM3U8Core = async () => text;
+			return context._processM3U8(secondUrl, playlist(400), vi.fn());
+		};
+		await serve(dated(400, "20.000"));
+		await serveSecond(dated(400, "20.000"));
+		const hold = context._createEmptyAdHoldPlaylist(playlist(400), info);
+		await serve(hold);
+		await serveSecond(hold);
+		const backup = dated(100, "23.999");
+		await serve(backup, "site", "private-token");
+		await serveSecond(backup);
+		await serve(dated(101, "25.999"), "site", "private-token");
+		await serveSecond(dated(101, "25.999"));
+		const events = log.mock.calls
+			.map(([message]) => String(message))
+			.filter((message) => message.startsWith("[Continuity] "))
+			.map((message) => {
+				const [, event, json] =
+					message.match(/^\[Continuity\] (\S+) (\{.*\})$/) || [];
+				return { event, ...JSON.parse(json) };
+			});
+		expect(events).toMatchObject([
+			{ event: "handoff", requestId: 1, sourceId: 5, previousSourceId: 3 },
+			{ event: "remap", requestId: 2, sourceId: 6, previousSourceId: 4 },
+		]);
+		expect(events[1].servedSequence).toBe(events[0].servedSequence);
+		expect(JSON.stringify(events)).not.toContain("private-token");
+	});
+
 	it("keeps source identifiers stable across delivery directives and separates signed sessions", () => {
 		const { context, info } = setup();
 		for (const url of [

@@ -241,6 +241,7 @@ const _AdRebufferState = {
 	stallCount: 0,
 	totalStallMs: 0,
 	stalls: [] as Array<{ startedAt: number; lostMs: number }>,
+	reloadGapMs: -1,
 };
 const _HiddenCleanLiveStallState = {
 	mediaKey: null as string | null,
@@ -5639,6 +5640,15 @@ function _handlePendingPostAdRecovery(
 		if (!_PostAdRecoveryTransactionState.advancingSinceAt) {
 			_PostAdRecoveryTransactionState.advancingSinceAt = now;
 			_PostAdRecoveryTransactionState.advancingSinceTime = liveCurrentTime;
+			if (
+				_PostAdRecoveryTransactionState.requiredNativeReloadAt > 0 &&
+				_AdRebufferState.mediaKey ===
+					_normalizeMediaKey(_PostAdRecoveryTransactionState.mediaKey) &&
+				_AdRebufferState.cycleStartedAt ===
+					_PostAdRecoveryTransactionState.cycleStartedAt
+			)
+				_AdRebufferState.reloadGapMs =
+					now - _PostAdRecoveryTransactionState.requiredNativeReloadAt;
 			_recordPostAdRecoveryTransition("advancing");
 		}
 		if (
@@ -7182,6 +7192,7 @@ function _resetAdRebufferState(mediaKey = null, cycleStartedAt = 0) {
 	_AdRebufferState.stallCount = 0;
 	_AdRebufferState.totalStallMs = 0;
 	_AdRebufferState.stalls = [];
+	_AdRebufferState.reloadGapMs = -1;
 }
 
 function _closeAdRebufferStall() {
@@ -7224,9 +7235,11 @@ function _logAdRebufferSummary() {
 		const unlisted = stallCount - _AdRebufferState.stalls.length;
 		summary = `${stallCount} stall${stallCount === 1 ? "" : "s"}, ${formatSeconds(_AdRebufferState.totalStallMs)} total ${visible} (at ${listed}${unlisted > 0 ? `, +${unlisted} more` : ""})`;
 	}
+	if (_AdRebufferState.reloadGapMs >= 0)
+		summary += `; player reload advancing after ${formatSeconds(_AdRebufferState.reloadGapMs)}`;
 	_log(
 		`[Break] rebuffering ${_AdRebufferState.mediaKey}${_AdRebufferState.cycleStartedAt ? ` cycle ${_AdRebufferState.cycleStartedAt}` : ""}: ${summary}`,
-		stallCount > 0 ? "warning" : "info",
+		stallCount > 0 || _AdRebufferState.reloadGapMs >= 0 ? "warning" : "info",
 	);
 	_resetAdRebufferState();
 }

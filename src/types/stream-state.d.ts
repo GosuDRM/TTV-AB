@@ -214,7 +214,7 @@ type TTVABAdBreakTimeline = {
 
 type TTVABPlaylistContinuityDiagnostics = {
 	nextSourceId: number;
-	lastServedSourceId: number;
+	nextRequestId?: number;
 	sources: Map<
 		string,
 		{
@@ -225,6 +225,7 @@ type TTVABPlaylistContinuityDiagnostics = {
 			suppressed: number;
 		}
 	>;
+	requests?: Map<string, { id: number; lastServedSourceId: number }>;
 	adBreak?: TTVABAdBreakTimeline | null;
 };
 
