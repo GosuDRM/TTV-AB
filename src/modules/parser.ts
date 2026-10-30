@@ -612,8 +612,35 @@ function _absolutizeMediaPlaylistUrls(
 		.join("\n");
 }
 
+const _EMPTY_HOLD_INIT_URL =
+	"data:video/mp4;base64,AAAAHGZ0eXBpc281AAACAGlzbzVpc282bXA0MQAABGNtb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAV+QAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABtXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAVFtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAD8bWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAADAc3RibAAAAHRzdHNkAAAAAAAAAAEAAABkbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAsZXNkcwAAAAADgICAGwABAASAgIANQBUAAAAAABONAAATjQaAgIABAgAAABRidHJ0AAAAAAAAE40AABONAAAAEHN0dHMAAAAAAAAAAAAAABBzdHNjAAAAAAAAAAAAAAAUc3RzegAAAAAAAAAAAAAAAAAAABBzdGNvAAAAAAAAAAAAAAHydHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAKAAAABaAAAAAABjm1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAABX5AAAAAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAATltaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAD5c3RibAAAAK1zdHNkAAAAAAAAAAEAAACdYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAKAAWgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAADdhdmNDAWQAHv/hABpnZAAerLIBQF/y4CIAAAMACAAAAwH0HixckAEABmjrw8siwP34+AAAAAAQcGFzcAAAAAEAAAABAAAAEHN0dHMAAAAAAAAAAAAAABBzdHNjAAAAAAAAAAAAAAAUc3RzegAAAAAAAAAAAAAAAAAAABBzdGNvAAAAAAAAAAAAAABIbXZleAAAACB0cmV4AAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAIHRyZXgAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAA=";
+
+const _EMPTY_HOLD_FRAGMENT_URL =
+	"data:video/mp4;base64,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jLAAAAMAAAb8AAAAAgnwAAAAFEGbMnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGbUnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGbcnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGbknhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGbsnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGb0nhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGb8nhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGaEnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGaMnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGaUnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGacnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGaknhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGasnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGa0nhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGa8nhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGbEnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGbMnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGbUnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGbcnhDyZTAhf/+jLAAAAMAAAb8AAAAAgnwAAAAFEGbknhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGbsnhDyZTAhf/+jLAAAAMAAAb9AAAAAgnwAAAAFEGb0nhDyZTAhX/+OEAAAAMAABswAAAAAgnwAAAAFUGb8nhDyZTAhP/98QAAAwAAAwBBwA==";
+
+function _hasAvcOnlyLiveCatalog(info: Partial<TTVABStreamInfo>) {
+	const variants = Object.values(info?.Urls || {});
+	return Boolean(
+		info?.MediaType === "live" &&
+			!info.IsUsingModifiedM3U8 &&
+			!info.EnhancedDecoderCodecFamily &&
+			!info.EnhancedDecoderCodec &&
+			!info._CodecHandoffPendingId &&
+			variants.some(
+				(variant) => _getVideoCodecFamily(variant?.Codecs) === "avc",
+			) &&
+			variants.every(
+				(variant) =>
+					_getVideoCodecFamily(variant?.Codecs) === "avc" ||
+					(variant?.Resolution === "0x0" &&
+						/^mp4a\.[\d.]+$/i.test(String(variant?.Codecs || "").trim())),
+			),
+	);
+}
+
 function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
-	if (/(?:^|\n)\s*#EXT-X-MAP:/.test(text)) {
+	const mappedMedia = /(?:^|\n)\s*#EXT-X-MAP:/.test(text);
+	if (mappedMedia && !_hasAvcOnlyLiveCatalog(info)) {
 		throw new DOMException(
 			"Transport hold cannot replace media with an initialization map",
 			"AbortError",
@@ -630,13 +657,13 @@ function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
 	);
 	if (versionIndex >= 0) {
 		headerLines[versionIndex] =
-			`#EXT-X-VERSION:${Math.max(3, Number(headerLines[versionIndex].split(":")[1]) || 0)}`;
+			`#EXT-X-VERSION:${Math.max(mappedMedia ? 6 : 3, Number(headerLines[versionIndex].split(":")[1]) || 0)}`;
 	}
 	if (!headerLines.includes("#EXTM3U")) {
 		headerLines.unshift("#EXTM3U");
 	}
 	if (!headerLines.some((line) => line.startsWith("#EXT-X-VERSION:"))) {
-		headerLines.splice(1, 0, "#EXT-X-VERSION:3");
+		headerLines.splice(1, 0, `#EXT-X-VERSION:${mappedMedia ? 6 : 3}`);
 	}
 	if (!headerLines.some((line) => line.startsWith("#EXT-X-TARGETDURATION:"))) {
 		headerLines.push("#EXT-X-TARGETDURATION:1");
@@ -754,9 +781,19 @@ function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
 		...(firstSlot === 0 ? ["#EXT-X-DISCONTINUITY"] : []),
 		"#EXT-X-KEY:METHOD=NONE",
 	];
+	if (mappedMedia) {
+		const initUrl = new URL(
+			"/__ttvab_empty_hold_init.mp4",
+			"https://www.twitch.tv",
+		);
+		initUrl.searchParams.set("media", mediaKey);
+		output.push(`#EXT-X-MAP:URI="${initUrl.href}"`);
+	}
 	for (let slot = firstSlot; slot <= lastSlot; slot++) {
 		const emptySegmentUrl = new URL(
-			"/__ttvab_empty_hold_segment.ts",
+			mappedMedia
+				? "/__ttvab_empty_hold_segment.m4s"
+				: "/__ttvab_empty_hold_segment.ts",
 			"https://www.twitch.tv",
 		);
 		emptySegmentUrl.searchParams.set(
@@ -774,9 +811,24 @@ function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
 }
 
 async function _getEmptyAdHoldResponse(url, realFetch, signal = null) {
-	const sequence = Number(new URL(url).searchParams.get("seq"));
+	const { pathname, searchParams } = new URL(url);
+	if (pathname === "/__ttvab_empty_hold_init.mp4") {
+		const response = await realFetch(_EMPTY_HOLD_INIT_URL, { signal });
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		if (signal?.aborted) {
+			throw new DOMException("Empty hold request aborted", "AbortError");
+		}
+		return new Response(bytes, {
+			status: 200,
+			headers: { "Content-Type": "video/mp4", "Cache-Control": "no-store" },
+		});
+	}
+	const sequence = Number(searchParams.get("seq"));
 	if (!Number.isSafeInteger(sequence) || sequence < 1) {
 		throw new Error("Invalid empty hold media sequence");
+	}
+	if (pathname === "/__ttvab_empty_hold_segment.m4s") {
+		return _getEmptyAdHoldFragmentResponse(sequence, realFetch, signal);
 	}
 	const response = await realFetch(_EMPTY_HOLD_SEGMENT_URL, { signal });
 	const bytes = new Uint8Array(await response.arrayBuffer());
@@ -862,13 +914,94 @@ async function _getEmptyAdHoldResponse(url, realFetch, signal = null) {
 	});
 }
 
+async function _getEmptyAdHoldFragmentResponse(
+	sequence,
+	realFetch,
+	signal = null,
+) {
+	if (sequence > 0xffffffff) {
+		throw new Error("Invalid empty hold media sequence");
+	}
+	const response = await realFetch(_EMPTY_HOLD_FRAGMENT_URL, { signal });
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	if (signal?.aborted) {
+		throw new DOMException("Empty hold request aborted", "AbortError");
+	}
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const readBoxes = (start, end, visit) => {
+		for (let offset = start; offset < end; ) {
+			const size = offset + 8 <= end ? view.getUint32(offset) : 0;
+			if (size < 16 || offset + size > end) {
+				throw new Error("Invalid empty hold fragment");
+			}
+			visit(
+				String.fromCharCode(...bytes.subarray(offset + 4, offset + 8)),
+				offset,
+				size,
+			);
+			offset += size;
+		}
+	};
+	const timedTracks = new Set();
+	readBoxes(0, bytes.length, (type, offset, size) => {
+		if (type !== "moof") return;
+		readBoxes(
+			offset + 8,
+			offset + size,
+			(childType, childOffset, childSize) => {
+				if (childType === "mfhd") view.setUint32(childOffset + 12, sequence);
+				if (childType !== "traf") return;
+				let track = 0;
+				let duration = 0;
+				let samples = 0;
+				let decodeTimeOffset = -1;
+				readBoxes(
+					childOffset + 8,
+					childOffset + childSize,
+					(trafType, trafOffset) => {
+						const flags = view.getUint32(trafOffset + 8) & 0xffffff;
+						if (trafType === "tfhd") {
+							track = view.getUint32(trafOffset + 12);
+							if (flags & 8)
+								duration = view.getUint32(
+									trafOffset + 16 + (flags & 1 ? 8 : 0) + (flags & 2 ? 4 : 0),
+								);
+						} else if (trafType === "trun" && !(flags & 0x100)) {
+							samples = view.getUint32(trafOffset + 12);
+						} else if (trafType === "tfdt" && bytes[trafOffset + 8] === 1) {
+							decodeTimeOffset = trafOffset + 12;
+						}
+					},
+				);
+				if (!track || !duration || !samples || decodeTimeOffset < 0) {
+					throw new Error("Invalid empty hold fragment timing");
+				}
+				view.setBigUint64(
+					decodeTimeOffset,
+					BigInt(sequence) * BigInt(duration * samples),
+				);
+				timedTracks.add(track);
+			},
+		);
+	});
+	if (timedTracks.size !== 2) {
+		throw new Error("Missing empty hold audio or video timing");
+	}
+	return new Response(bytes, {
+		status: 200,
+		headers: { "Content-Type": "video/mp4", "Cache-Control": "no-store" },
+	});
+}
+
 function _isEmptyAdHoldSegmentUrl(url) {
 	if (typeof url !== "string" || !url) return false;
 	try {
 		const parsed = new URL(url, "https://www.twitch.tv");
 		return (
 			parsed.hostname === "www.twitch.tv" &&
-			parsed.pathname === "/__ttvab_empty_hold_segment.ts"
+			(parsed.pathname === "/__ttvab_empty_hold_segment.ts" ||
+				parsed.pathname === "/__ttvab_empty_hold_segment.m4s" ||
+				parsed.pathname === "/__ttvab_empty_hold_init.mp4")
 		);
 	} catch {
 		return false;

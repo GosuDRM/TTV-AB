@@ -1912,7 +1912,7 @@ function _hookWorkerFetch() {
 			);
 			if (
 				shouldBlockAdSegments &&
-				url.includes("/__ttvab_empty_hold_segment.ts") &&
+				url.includes("/__ttvab_empty_hold_") &&
 				typeof _isEmptyAdHoldSegmentUrl === "function" &&
 				_isEmptyAdHoldSegmentUrl(url)
 			) {
@@ -5508,7 +5508,7 @@ function _installPageSideM3U8Override() {
 			const stripped = _stripM3U8Ads(text, getEmptyHoldInfo());
 			if (
 				stripped.includes(
-					"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+					"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 				) &&
 				!_canServePageSideAvcHold(
 					urlStr,

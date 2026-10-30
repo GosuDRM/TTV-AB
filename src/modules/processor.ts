@@ -2639,7 +2639,7 @@ function _alignLivePlaylist(
 	)
 		return text;
 	const previous = info._LivePlaylistTimeline;
-	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
+	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.")) {
 		if (commitTimeline && previous && !previous.afterHold)
 			info._LivePlaylistTimeline = { ...previous, afterHold: true };
 		return text;
@@ -3086,7 +3086,7 @@ function _logPlaylistContinuity(
 		const requestKey = _getMediaPlaylistSessionKey(url);
 		const nativeVariant = _getNativePlaylistVariant(info, url);
 		const hold = text.includes(
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 		);
 		const sourceKey = JSON.stringify([
 			requestKey,
@@ -3569,7 +3569,7 @@ function _applyPlaylistContinuity(
 		}
 		if (info && __TTVAB_STATE__?.IsAdStrippingEnabled === true)
 			info._LastServedPlaylistKind = output.includes(
-				"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+				"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 			)
 				? "hold"
 				: backupMetadata
@@ -3747,7 +3747,7 @@ function _applyBackupSpliceBridge(
 		}
 		return { first, last, lastSequence };
 	};
-	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
+	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.")) {
 		info._SpliceStreamId = "empty-hold";
 		info._SpliceBoundarySeq = null;
 		info._SpliceDiscontinuityOffset = 0;
@@ -3933,7 +3933,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	)
 		return null;
 	const isHold = text.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 	);
 	if (
 		!isHold &&
@@ -5813,7 +5813,7 @@ function _getAdStartBackupWaitDeadline(info: TTVABStreamInfo, text) {
 		info._LastServedPlaylistKind !== "native" ||
 		info._EmptyAdHoldWindow?.cycleStartedAt === cycleStartedAt ||
 		typeof text !== "string" ||
-		/(?:^|\n)\s*#EXT-X-MAP:/.test(text) ||
+		(/(?:^|\n)\s*#EXT-X-MAP:/.test(text) && !_hasAvcOnlyLiveCatalog(info)) ||
 		!(
 			info._BackupSearchPromise ||
 			Number(info._BackupSearchStartedAt) > 0 ||
@@ -6488,7 +6488,7 @@ async function _processM3U8Attempt(
 			result === info.LastCleanNativeM3U8,
 	);
 	const returnedEmptyHoldBeforeEnhancedStrip = result.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 	);
 	const requestMayUseCachedAdSegments = Boolean(
 		requestAdContext.includeCachedAdSegments ||
@@ -6529,7 +6529,7 @@ async function _processM3U8Attempt(
 				result === info.LastCleanBackupM3U8),
 	);
 	const returnedAvcEmptyHold = result.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 	);
 	const returnedCachedNative = Boolean(
 		typeof info.LastCleanNativeM3U8 === "string" &&
@@ -6669,6 +6669,10 @@ async function _processM3U8Attempt(
 			_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
 			result = _createEmptyAdHoldPlaylist(text, info);
 		}
+		const holdMatchesContainer =
+			/(?:^|\n)\s*#EXT-X-MAP:/.test(text) ===
+				/(?:^|\n)\s*#EXT-X-MAP:/.test(result) &&
+			(!/(?:^|\n)\s*#EXT-X-MAP:/.test(result) || _hasAvcOnlyLiveCatalog(info));
 		const canContinueEmptyHold = Boolean(
 			info === initialInfo &&
 				info.MediaType === "live" &&
@@ -6691,8 +6695,7 @@ async function _processM3U8Attempt(
 				returnedBackupMatchesRequest &&
 				resultBackupMetadata?.playlistUrl &&
 				resultBackupMetadata.ambiguous !== true &&
-				!/(?:^|\n)\s*#EXT-X-MAP:/.test(text) &&
-				!/(?:^|\n)\s*#EXT-X-MAP:/.test(result),
+				holdMatchesContainer,
 		);
 		const canStartEmptyHold = Boolean(
 			!canContinueEmptyHold &&
@@ -6714,7 +6717,7 @@ async function _processM3U8Attempt(
 				returnedBackupMatchesRequest &&
 				resultBackupMetadata?.playlistUrl &&
 				resultBackupMetadata.ambiguous !== true &&
-				!/(?:^|\n)\s*#EXT-X-MAP:/.test(result),
+				holdMatchesContainer,
 		);
 		if (canContinueEmptyHold || canStartEmptyHold)
 			_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
@@ -8319,7 +8322,7 @@ async function _processM3U8Core(
 									waitsForBackup
 										? `waiting up to ${((_getAdStartBackupWaitDeadline(info, text) - Date.now()) / 1000).toFixed(1)}s for a live backup`
 										: stripped.includes(
-													"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+													"https://www.twitch.tv/__ttvab_empty_hold_segment.",
 												)
 											? "serving the silent hold"
 											: "serving the stream with ad segments removed"
