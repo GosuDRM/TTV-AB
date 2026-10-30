@@ -986,7 +986,7 @@ describe("_resetStreamAdState", () => {
 			_LastServedPlaylistKind: "backup",
 			_PlaylistContinuityDiagnostics: {
 				nextSourceId: 2,
-				lastServedSourceId: 2,
+				nextRequestId: 0,
 				sources: new Map(),
 			},
 			_LivePlaylistTimeline: {
@@ -6614,7 +6614,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			const cycleStartedAt = Number(info.VisibleAdStartedAt);
 			info._PlaylistContinuityDiagnostics = {
 				nextSourceId: 1,
-				lastServedSourceId: 1,
+				nextRequestId: 0,
 				sources: new Map(),
 				adBreak: {
 					cycleStartedAt,
@@ -10572,7 +10572,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			});
 			const diagnostics = {
 				nextSourceId: 0,
-				lastServedSourceId: 0,
+				nextRequestId: 0,
 				sources: new Map(),
 			};
 			const record =

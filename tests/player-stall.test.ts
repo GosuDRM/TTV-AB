@@ -6504,6 +6504,50 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		},
 	);
 
+	it.each([
+		["the same break", 440000, true],
+		["another break", 450000, false],
+	])(
+		"adds the post-ad reload gap for %s to the rebuffering summary",
+		(_label, measuredCycle, reported) => {
+			const log = vi.spyOn(g, "_log");
+			currentPlayback = makePlayback({
+				currentTime: 10,
+				bufferedEnd: 20,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			let frames = 100;
+			Object.defineProperty(currentPlayback.video, "getVideoPlaybackQuality", {
+				value: () => ({ totalVideoFrames: frames }),
+				configurable: true,
+			});
+			nowSpy.mockReturnValue(500000);
+			T<(mediaKey: string, cycleStartedAt: number) => void>(
+				"_resetAdRebufferState",
+			)("live:chan", measuredCycle);
+			expect(startTransaction()("chan", "live:chan", 440000)).toBe(true);
+			transaction().requiredNativeReloadAt = 499000;
+			transaction().nativeReloadConfirmedAt = 499000;
+			expect(sample(500000)).toBe(false);
+			currentPlayback.setCurrentTime(11);
+			frames += 60;
+			sample(501100);
+			T<() => void>("_logAdRebufferSummary")();
+			const summary = log.mock.calls.find(([message]) =>
+				String(message).startsWith("[Break] rebuffering"),
+			);
+			if (reported)
+				expect(summary).toEqual([
+					expect.stringMatching(
+						/^\[Break\] rebuffering live:chan cycle 440000: .*; player reload advancing after 2\.1s$/,
+					),
+					"warning",
+				]);
+			else expect(summary?.[0]).not.toContain("player reload");
+		},
+	);
+
 	it("gives a fresh exact recovery observation time before rebuilding", () => {
 		const playback = makePlayback();
 		reloadOutcomes.push(true);

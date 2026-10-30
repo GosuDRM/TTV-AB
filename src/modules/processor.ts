@@ -2502,12 +2502,7 @@ function _logServedEndAheadOfClock(
 			: `native ${_getNativePlaylistVariant(info, url)?.variant.Resolution || "unknown"}`;
 		const key = `${cause}|${source}`;
 		const last = _ServedEndAheadLogs.get(info);
-		if (
-			last?.key === key &&
-			now - last.at < 60000 &&
-			leadMs < last.leadMs + 1000
-		)
-			return;
+		if (last?.key === key && Math.abs(leadMs - last.leadMs) < 1000) return;
 		_ServedEndAheadLogs.set(info, { key, at: now, leadMs });
 		_log(
 			`[Continuity] served end ${(leadMs / 1000).toFixed(1)}s ahead of the local clock after ${cause} from ${source} (advanced ${((nextEndTime - previousEndTime) / 1000).toFixed(1)}s; ${info.IsShowingAd || info.IsHoldingBackupAfterAd ? `${info._LastServedPlaylistKind || "unknown"} during ad` : "live"}) for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}`,
@@ -3079,8 +3074,9 @@ function _logPlaylistContinuity(
 			return;
 		info._PlaylistContinuityDiagnostics ??= {
 			nextSourceId: 0,
-			lastServedSourceId: 0,
+			nextRequestId: 0,
 			sources: new Map(),
+			requests: new Map(),
 		};
 		const state = info._PlaylistContinuityDiagnostics;
 		const requestKey = _getMediaPlaylistSessionKey(url);
@@ -3109,6 +3105,15 @@ function _logPlaylistContinuity(
 			while (state.sources.size > 32)
 				state.sources.delete(state.sources.keys().next().value);
 		}
+		state.requests ??= new Map();
+		let request = state.requests.get(requestKey);
+		if (!request) {
+			state.nextRequestId = (state.nextRequestId || 0) + 1;
+			request = { id: state.nextRequestId, lastServedSourceId: 0 };
+			state.requests.set(requestKey, request);
+			while (state.requests.size > 32)
+				state.requests.delete(state.requests.keys().next().value);
+		}
 		const reasons = {
 			"Live handoff requires unambiguous broadcast timestamps":
 				"ambiguous-timestamps",
@@ -3126,7 +3131,7 @@ function _logPlaylistContinuity(
 				: "continuity-error"
 			: null;
 		const mapping = info._EmptyHoldTimelineByUrl?.get(requestKey);
-		const continuingSource = source.id === state.lastServedSourceId;
+		const continuingSource = source.id === request.lastServedSourceId;
 		const windowDelta =
 			continuingSource && source.lastEndTime > 0
 				? diagnostic.lastEndTime - source.lastEndTime
@@ -3152,7 +3157,7 @@ function _logPlaylistContinuity(
 							: diagnostic.internalOverlapMs > 50
 								? "timestamp-overlap"
 								: "";
-		const previousSource = state.lastServedSourceId || null;
+		const previousSource = request.lastServedSourceId || null;
 		const native = nativeVariant?.variant;
 		const resolution = metadata?.resolution || native?.Resolution;
 		const servedResolution = /^\d{1,5}x\d{1,5}$/.test(resolution)
@@ -3168,7 +3173,7 @@ function _logPlaylistContinuity(
 					? metadata.playerType
 					: "backup";
 		if (output != null) {
-			state.lastServedSourceId = source.id;
+			request.lastServedSourceId = source.id;
 			if (Number.isFinite(diagnostic.lastEndTime))
 				source.lastEndTime = Math.max(
 					source.lastEndTime,
@@ -3221,6 +3226,7 @@ function _logPlaylistContinuity(
 				cycleStartedAt: cycle,
 				cyclePhase: activeCycle ? "active" : completedCycle ? "ended" : "none",
 				loaderEpoch: Number(info.NativeRecoveryLoaderEpoch) || 0,
+				requestId: request.id,
 				sourceId: source.id,
 				previousSourceId: previousSource,
 				source: servedSource,
