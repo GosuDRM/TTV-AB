@@ -12421,9 +12421,13 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
-	it.each([false, true])(
-		"does not send transport hold bytes to mapped native media in the injected worker with fallback disabled=%s",
-		async (disabled) => {
+	it.each(
+		[false, true].flatMap((disabled) =>
+			["avc1.64002a", "hev1.1.6.L153.B0"].map((codec) => ({ disabled, codec })),
+		),
+	)(
+		"serves only matching hold media to mapped $codec native media in the injected worker with fallback disabled=$disabled",
+		async ({ disabled, codec }) => {
 			vi.useFakeTimers();
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 			const harness = installWorkerMessageHarness({
@@ -12432,12 +12436,16 @@ describe("injected worker ad playlist validation", () => {
 			const masterUrl =
 				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?token=owned";
 			const mediaUrl = "https://edge.example/native.m3u8?token=owned";
-			const master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="${codec},mp4a.40.2"\n${mediaUrl}`;
 			const clean =
 				'#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:400\n#EXT-X-MAP:URI="https://edge.example/init.mp4"\n#EXTINF:2.000,live\nhttps://edge.example/clean.m4s';
 			let ad = false;
 			const fetch = vi.fn(async (input: RequestInfo | URL) => {
 				if (String(input) === masterUrl) return new Response(master);
+				if (String(input).startsWith("data:video/mp4;base64,"))
+					return new Response(
+						Buffer.from(String(input).split(",")[1], "base64"),
+					);
 				if (String(input) !== mediaUrl)
 					return new Response(null, { status: 503 });
 				return new Response(
@@ -12459,18 +12467,42 @@ describe("injected worker ad playlist validation", () => {
 				expect(await (await workerFetch(mediaUrl)).text()).toBe(clean);
 				await vi.advanceTimersByTimeAsync(3000);
 				ad = true;
-				await expect(workerFetch(mediaUrl)).rejects.toMatchObject({
-					name: "AbortError",
-					message: expect.stringContaining("initialization map"),
-				});
 				const info = (
 					state.StreamInfos as Record<string, Record<string, unknown>>
 				)["live:testchannel"];
-				expect(info.IsShowingAd).toBe(true);
-				expect(info._EmptyAdHoldMediaSequence).toBe(0);
-				expect(
-					(info._EmptyHoldTimelineByUrl as Map<string, unknown>).size,
-				).toBe(0);
+				if (codec.startsWith("hev1")) {
+					await expect(workerFetch(mediaUrl)).rejects.toMatchObject({
+						name: "AbortError",
+						message: expect.stringContaining("initialization map"),
+					});
+					expect(info.IsShowingAd).toBe(true);
+					expect(info._EmptyAdHoldMediaSequence).toBe(0);
+					expect(
+						(info._EmptyHoldTimelineByUrl as Map<string, unknown>).size,
+					).toBe(0);
+				} else {
+					const hold = await (await workerFetch(mediaUrl)).text();
+					expect(info.IsShowingAd).toBe(true);
+					expect(hold).not.toContain("stitched-ad");
+					expect(hold).not.toContain("__ttvab_empty_hold_segment.ts");
+					const initUrl = hold.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1];
+					expect(initUrl).toMatch(/\/__ttvab_empty_hold_init\.mp4\?/);
+					const segmentUrls = hold
+						.split("\n")
+						.filter((line) => line.includes("/__ttvab_empty_hold_segment.m4s"));
+					expect(segmentUrls.length).toBeGreaterThanOrEqual(3);
+					const init = new Uint8Array(
+						await (await workerFetch(String(initUrl))).arrayBuffer(),
+					);
+					expect(String.fromCharCode(...init.subarray(4, 8))).toBe("ftyp");
+					const segment = new Uint8Array(
+						await (await workerFetch(segmentUrls[0])).arrayBuffer(),
+					);
+					expect(String.fromCharCode(...segment.subarray(4, 8))).toBe("moof");
+					expect(new DataView(segment.buffer).getUint32(20)).toBe(
+						Number(new URL(segmentUrls[0]).searchParams.get("seq")),
+					);
+				}
 				state.IsAdStrippingEnabled = false;
 				expect(await (await workerFetch(mediaUrl)).text()).toContain(
 					"stitched-ad.m4s",

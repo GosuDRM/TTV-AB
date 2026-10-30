@@ -447,15 +447,182 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		},
 	);
 
-	it("rejects a transport hold for a playlist with a native initialization map", () => {
+	it.each([
+		["no catalog", {}],
+		["VOD", { MediaType: "vod" }],
+		[
+			"an HEVC rendition",
+			{
+				Urls: {
+					hevc: {
+						Resolution: "2560x1440",
+						Codecs: "hev1.1.6.L153.B0,mp4a.40.2",
+					},
+				},
+			},
+		],
+		[
+			"an AV1 rendition",
+			{
+				Urls: {
+					av1: { Resolution: "2560x1440", Codecs: "av01.0.13M.08,mp4a.40.2" },
+				},
+			},
+		],
+		["an enhanced decoder", { EnhancedDecoderCodec: "hev1.1.6.L153.B0" }],
+		["a pending codec handoff", { _CodecHandoffPendingId: 3 }],
+		["a modified master", { IsUsingModifiedM3U8: true }],
+	])("rejects a hold for mapped media with %s", (_label, overrides) => {
 		const create = T<(text: string, info: Record<string, unknown>) => string>(
 			"_createEmptyAdHoldPlaylist",
 		);
-		const info = makeInfo();
+		const info = makeInfo(
+			Object.keys(overrides).length === 0
+				? {}
+				: {
+						...mappedAvcInfo(),
+						...overrides,
+						Urls: {
+							...mappedAvcInfo().Urls,
+							...(overrides as { Urls?: object }).Urls,
+						},
+					},
+		);
 		const input =
 			'#EXTM3U\r\n#EXT-X-MEDIA-SEQUENCE:100\r\n#EXT-X-MAP:URI="init.mp4"\r\n#EXTINF:2,stitched-ad\r\nad.m4s';
 		expect(() => create(input, info)).toThrow(/initialization map/);
 		expect(info._EmptyAdHoldMediaSequence || 0).toBe(0);
+	});
+
+	it("serves fragmented hold media with its own map for an AVC-only live catalog", () => {
+		const create = T<(text: string, info: Record<string, unknown>) => string>(
+			"_createEmptyAdHoldPlaylist",
+		);
+		const info = makeInfo(mappedAvcInfo());
+		const input = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:3",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			'#EXT-X-MAP:URI="https://edge.example/native-init.mp4"',
+			"#EXTINF:2,stitched-ad",
+			"ad.m4s",
+		].join("\n");
+		const output = create(input, info);
+		const lines = output.split("\n");
+		expect(lines).toContain("#EXT-X-VERSION:6");
+		expect(output).not.toContain("native-init");
+		expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+		const mapIndex = lines.findIndex((line) => line.startsWith("#EXT-X-MAP:"));
+		expect(lines[mapIndex]).toBe(
+			'#EXT-X-MAP:URI="https://www.twitch.tv/__ttvab_empty_hold_init.mp4?media=live%3Atestchannel"',
+		);
+		expect(mapIndex).toBeGreaterThan(lines.indexOf("#EXT-X-DISCONTINUITY"));
+		const segments = lines.filter((line) =>
+			line.startsWith("https://www.twitch.tv/__ttvab_empty_hold_segment.m4s?"),
+		);
+		expect(segments).toHaveLength(3);
+		expect(segments[0]).toContain("?seq=101&");
+		const isHold = T<(url: string) => boolean>("_isEmptyAdHoldSegmentUrl");
+		expect(isHold(segments[0])).toBe(true);
+		expect(isHold(lines[mapIndex].slice(16, -1))).toBe(true);
+	});
+
+	it("stamps each fragmented hold segment with continuous audio and video decode times", async () => {
+		const respond = T<
+			(url: string, realFetch: typeof fetch) => Promise<Response>
+		>("_getEmptyAdHoldResponse");
+		const realFetch = (async (input: string) =>
+			new Response(Buffer.from(input.split(",")[1], "base64"))) as typeof fetch;
+		const init = Buffer.from(
+			await (
+				await respond(
+					"https://www.twitch.tv/__ttvab_empty_hold_init.mp4?media=live%3Atestchannel",
+					realFetch,
+				)
+			).arrayBuffer(),
+		);
+		expect(init.toString("latin1", 4, 8)).toBe("ftyp");
+		expect(
+			init.toString(
+				"latin1",
+				init.readUInt32BE(0) + 4,
+				init.readUInt32BE(0) + 8,
+			),
+		).toBe("moov");
+		const timing = async (sequence: number) => {
+			const response = await respond(
+				`https://www.twitch.tv/__ttvab_empty_hold_segment.m4s?seq=${sequence}&media=live%3Atestchannel`,
+				realFetch,
+			);
+			expect(response.headers.get("Content-Type")).toBe("video/mp4");
+			const bytes = Buffer.from(await response.arrayBuffer());
+			const tracks = new Map<number, { start: number; duration: number }>();
+			let fragmentSequence = 0;
+			const walk = (
+				start: number,
+				end: number,
+				visit: (type: string, offset: number, size: number) => void,
+			) => {
+				for (
+					let offset = start;
+					offset < end;
+					offset += bytes.readUInt32BE(offset)
+				)
+					visit(
+						bytes.toString("latin1", offset + 4, offset + 8),
+						offset,
+						bytes.readUInt32BE(offset),
+					);
+			};
+			walk(0, bytes.length, (type, offset, size) => {
+				if (type !== "moof") return;
+				walk(offset + 8, offset + size, (child, childOffset, childSize) => {
+					if (child === "mfhd")
+						fragmentSequence = bytes.readUInt32BE(childOffset + 12);
+					if (child !== "traf") return;
+					let track = 0;
+					let sampleDuration = 0;
+					let samples = 0;
+					let decodeTime = 0;
+					walk(childOffset + 8, childOffset + childSize, (box, boxOffset) => {
+						const flags = bytes.readUInt32BE(boxOffset + 8) & 0xffffff;
+						if (box === "tfhd") {
+							track = bytes.readUInt32BE(boxOffset + 12);
+							sampleDuration = bytes.readUInt32BE(
+								boxOffset + 16 + (flags & 1 ? 8 : 0) + (flags & 2 ? 4 : 0),
+							);
+						}
+						if (box === "trun") samples = bytes.readUInt32BE(boxOffset + 12);
+						if (box === "tfdt")
+							decodeTime = Number(bytes.readBigUInt64BE(boxOffset + 12));
+					});
+					tracks.set(track, {
+						start: decodeTime,
+						duration: sampleDuration * samples,
+					});
+				});
+			});
+			expect(fragmentSequence).toBe(sequence);
+			return tracks;
+		};
+		const first = await timing(41);
+		const second = await timing(42);
+		expect([...first.keys()].sort()).toEqual([1, 2]);
+		expect(first.get(1)).toEqual({ start: 41 * 49152, duration: 49152 });
+		expect(first.get(2)).toEqual({ start: 41 * 92160, duration: 92160 });
+		for (const track of [1, 2]) {
+			const previous = first.get(track);
+			expect(second.get(track)?.start).toBe(
+				Number(previous?.start) + Number(previous?.duration),
+			);
+		}
+		await expect(
+			respond(
+				`https://www.twitch.tv/__ttvab_empty_hold_segment.m4s?seq=${2 ** 32}&media=live%3Atestchannel`,
+				realFetch,
+			),
+		).rejects.toThrow(/media sequence/);
 	});
 
 	it("uses self-contained transport media without native encryption or byte ranges", () => {
@@ -737,6 +904,36 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			LastCleanNativeM3U8: null,
 			LastCleanNativePlaylistAt: 0,
 			...overrides,
+		};
+	}
+
+	beforeAll(() => {
+		const g = globalThis as Record<string, unknown>;
+		const family = (codecs: unknown) => {
+			const video = String(codecs || "")
+				.toLowerCase()
+				.split(",")
+				.map((value) => value.trim())
+				.find((value) => /^(?:avc1|hev1|hvc1|av01)/.test(value));
+			if (!video) return null;
+			return video.startsWith("avc1")
+				? "avc"
+				: video.startsWith("av01")
+					? "av1"
+					: "hevc";
+		};
+		g._getVideoCodecFamily ??= family;
+	});
+
+	function mappedAvcInfo() {
+		return {
+			MediaType: "live",
+			MediaKey: "live:testchannel",
+			Urls: {
+				source: { Resolution: "1920x1080", Codecs: "avc1.4D401F,mp4a.40.2" },
+				low: { Resolution: "640x360", Codecs: "avc1.4D401E,mp4a.40.2" },
+				audio: { Resolution: "0x0", Codecs: "mp4a.40.2" },
+			},
 		};
 	}
 });
