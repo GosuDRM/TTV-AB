@@ -234,7 +234,7 @@ function setup(withCodecHandoff = true) {
 	};
 }
 
-function setupHdNativeReturn(datedMedia = true) {
+function setupHdNativeReturn(datedMedia = true, mappedMedia = false) {
 	const f = setup(false);
 	const native = f.info.ResolutionList[1];
 	Object.assign(f.info, {
@@ -259,7 +259,7 @@ function setupHdNativeReturn(datedMedia = true) {
 		datedMedia
 			? text.replace(
 					"#EXTINF:",
-					`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now()).toISOString()}\n#EXTINF:`,
+					`${mappedMedia ? '#EXT-X-MAP:URI="https://edge.example/init.mp4"\n' : ""}#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now()).toISOString()}\n#EXTINF:`,
 				)
 			: text;
 	f.fetch.mockImplementation(async (input) => {
@@ -279,6 +279,66 @@ function setupHdNativeReturn(datedMedia = true) {
 }
 
 describe("compatible native playlist return", () => {
+	it.each([false, true])(
+		"returns from a served HD backup by playlist when both use fragmented AVC media, fallback disabled=%s",
+		async (disabled) => {
+			const f = setupHdNativeReturn(true, true);
+			f.state.DisableAutoplayBackup = disabled;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				output = await f.poll();
+			}
+			expect(output).toContain("native-");
+			expect(output).toContain(
+				'#EXT-X-MAP:URI="https://edge.example/init.mp4"',
+			);
+			expect(output).not.toContain("stitched-ad");
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+		},
+	);
+
+	it.each(["backup without a map", "native without a map"])(
+		"keeps the decoder rebuild when the containers differ: %s",
+		async (condition) => {
+			const f = setupHdNativeReturn(true, true);
+			await f.poll();
+			f.advance(2000);
+			const native = f.info.ResolutionList[1];
+			const request = {
+				exactNativeRecoveryOwned: true,
+				verifiedNativeRecoveryTarget: {
+					playlistUrl: nativeUrl,
+					resolution: native.Resolution,
+					codec: native.Codecs,
+				},
+			};
+			let text = f.dated(playlist(800, "native"));
+			const blocker = () =>
+				f.context._getNativePlaylistReturnBlocker(
+					f.info,
+					nativeUrl,
+					text,
+					request,
+				);
+			expect(blocker()).toBe(null);
+			if (condition === "backup without a map") {
+				const metadata = f.info.BackupPlaylistMetadata.get(
+					f.info.LastCleanBackupM3U8,
+				);
+				f.info.LastCleanBackupM3U8 = f.info.LastCleanBackupM3U8.replace(
+					/#EXT-X-MAP:[^\n]*\n/,
+					"",
+				);
+				f.info.BackupPlaylistMetadata.set(f.info.LastCleanBackupM3U8, metadata);
+			} else text = text.replace(/#EXT-X-MAP:[^\n]*\n/, "");
+			expect(blocker()).toBe("backup and native use different containers");
+		},
+	);
+
 	it.each([false, true])(
 		"returns from an already served HD backup without rebuilding after autoplay, fallback disabled=%s",
 		async (disabled) => {
