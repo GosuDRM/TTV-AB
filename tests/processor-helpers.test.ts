@@ -3722,18 +3722,24 @@ describe("_shouldTryAutoplayFirst (LQ fallback)", () => {
 		getState().DisableAutoplayBackup = true;
 	});
 
-	it("holds LQ (autoplay) first while within the LQ→HQ dwell window", () => {
-		getState().DisableAutoplayBackup = false;
-		const info = makeInfo({
-			ActiveBackupPlayerType: "autoplay",
-			LastCleanBackupM3U8: "#EXTM3U8",
-			LastCleanBackupAt: 1000,
-			VisibleAdStartedAt: 500,
-			_LqHoldStartAt: Date.now() - 2000,
-		});
-		expect(fn()(info)).toBe(true);
-		getState().DisableAutoplayBackup = true;
-	});
+	it.each([
+		[1000, true],
+		[2500, false],
+	])(
+		"holds LQ (autoplay) first only until HQ probation can finish by the dwell end, %s ms in",
+		(elapsedMs, holdsAutoplay) => {
+			getState().DisableAutoplayBackup = false;
+			const info = makeInfo({
+				ActiveBackupPlayerType: "autoplay",
+				LastCleanBackupM3U8: "#EXTM3U8",
+				LastCleanBackupAt: 1000,
+				VisibleAdStartedAt: 500,
+				_LqHoldStartAt: Date.now() - elapsedMs,
+			});
+			expect(fn()(info)).toBe(holdsAutoplay);
+			getState().DisableAutoplayBackup = true;
+		},
+	);
 
 	it("allows the LQ→HQ swap after the dwell window elapses", () => {
 		getState().DisableAutoplayBackup = false;
@@ -3755,9 +3761,9 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 			"_shouldHoldAutoplayBackupDuringAd",
 		);
 
-	it("keeps autoplay as the only in-ad candidate during the LQ dwell window", () => {
+	it("keeps autoplay as the only in-ad candidate until HQ probation can finish by the dwell end", () => {
 		getState().DisableAutoplayBackup = false;
-		const startedAt = Date.now() - 2000;
+		const startedAt = Date.now() - 1000;
 		const info = makeInfo({
 			IsShowingAd: true,
 			ActiveBackupPlayerType: "autoplay",

@@ -926,15 +926,15 @@ describe("HD backup probation through playlist polling", () => {
 		).toBe(false);
 	});
 
-	it("starts the first HD check when the autoplay dwell ends while keeping the bridge refreshed", async () => {
+	it("starts the first HD check early enough to promote when the autoplay dwell ends", async () => {
 		const f = setupProbation();
 		f.info._LqHoldStartAt = 999_000;
 		f.info._LastBackupSearchCompletedAt = 999_000;
 		expect(await f.poll()).toContain("/autoplay/360/");
-		f.advance(6999);
+		f.advance(999);
 		expect(await f.poll()).toContain("/autoplay/360/");
 		expect(f.siteRequests()).toHaveLength(0);
-		expect(f.info.LastCleanBackupAt).toBe(1_006_999);
+		expect(f.info.LastCleanBackupAt).toBe(1_000_999);
 		f.advance(1);
 		expect(await f.poll()).toContain("/autoplay/360/");
 		expect(f.siteRequests()).toHaveLength(1);
@@ -949,6 +949,27 @@ describe("HD backup probation through playlist polling", () => {
 		f.advance(1500);
 		expect(await f.poll()).toContain("/site/1080/");
 		expect(f.info.ActiveBackupPlayerType).toBe("site");
+		expect(Date.now() - 999_000).toBe(8000);
+	});
+
+	it("keeps a clean HD candidate behind the bridge until the autoplay dwell ends", async () => {
+		const f = setupProbation();
+		f.info._LqHoldStartAt = 1_000_000;
+		f.info._LastBackupSearchCompletedAt = 1_000_000;
+		f.advance(2000);
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.siteRequests()).toHaveLength(1);
+		const probationStartedAt = Number(f.info._BackupProbation?.startedAt);
+		f.state.LqHqHoldMinMs = 11_000;
+		for (let look = 0; look < 5; look++) {
+			f.advance(1500);
+			expect(await f.poll()).toContain("/autoplay/360/");
+			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+		}
+		expect(Date.now() - probationStartedAt).toBe(7500);
+		f.advance(1500);
+		expect(await f.poll()).toContain("/site/1080/");
+		expect(Date.now() - 1_000_000).toBe(11_000);
 	});
 
 	it.each(
@@ -1643,6 +1664,7 @@ describe("codec ordering and backup quality ownership", () => {
 		expect(context._hasPlaylistAdMarkers(replacement)).toBe(false);
 		expect(info.ActiveBackupPlayerType).toBe("autoplay");
 		const dwellStartedAt = now;
+		expect(context._shouldHoldAutoplayBackupDuringAd(info)).toBe(true);
 		for (let index = 0; index < 10; index++) {
 			now += 2000;
 			const output = await context._processM3U8(
@@ -1652,9 +1674,6 @@ describe("codec ordering and backup quality ownership", () => {
 			);
 			expect(output).toContain("/autoplay/360/");
 			expect(context._hasPlaylistAdMarkers(output)).toBe(false);
-			if (index === 2) {
-				expect(context._shouldHoldAutoplayBackupDuringAd(info)).toBe(true);
-			}
 		}
 		expect(info.LastCleanBackupAt).toBe(now);
 		expect(context._shouldHoldAutoplayBackupDuringAd(info)).toBe(false);

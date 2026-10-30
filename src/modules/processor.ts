@@ -1189,7 +1189,7 @@ function _getPendingForegroundQualityProbeAt(info: TTVABStreamInfo) {
 function _isBackupQualityProbeDue(info: TTVABStreamInfo) {
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const holdStartedAt = Math.max(0, Number(info?._LqHoldStartAt) || 0);
-	const holdEndsAt = holdStartedAt + _getResolvedLqHqHoldMinMs();
+	const probeStartsAt = holdStartedAt + _getLqHqProbeDelayMs();
 	const mediaKey = _normalizeMediaKey(info?.MediaKey);
 	if (
 		__TTVAB_STATE__?.DisableAutoplayBackup === true ||
@@ -1197,9 +1197,9 @@ function _isBackupQualityProbeDue(info: TTVABStreamInfo) {
 		info?.MediaType !== "live" ||
 		!cycleStartedAt ||
 		holdStartedAt < cycleStartedAt ||
-		Date.now() < holdEndsAt ||
+		Date.now() < probeStartsAt ||
 		!info._LastBackupSearchCompletedAt ||
-		(info._LastBackupSearchCompletedAt >= holdEndsAt &&
+		(info._LastBackupSearchCompletedAt >= probeStartsAt &&
 			Date.now() - info._LastBackupSearchCompletedAt <
 				_getBackupPlayerRetryCooldownMs()) ||
 		!mediaKey ||
@@ -1239,7 +1239,7 @@ function _startPendingBackupQualityProbe(
 	const qualityProbeRetry =
 		qualityProbeDue &&
 		Number(info._LastBackupSearchCompletedAt) >=
-			Number(info._LqHoldStartAt) + _getResolvedLqHqHoldMinMs();
+			Number(info._LqHoldStartAt) + _getLqHqProbeDelayMs();
 	if (
 		(!foregroundQualityProbeAt &&
 			!qualityProbeDue &&
@@ -1260,7 +1260,7 @@ function _startPendingBackupQualityProbe(
 				: qualityProbeRetry
 					? "[Trace] Retrying normal-quality backup while the clean bridge keeps refreshing"
 					: qualityProbeDue
-						? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
+						? "[Trace] Probing normal-quality backup during the autoplay dwell while the clean bridge keeps refreshing"
 						: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
 			"info",
 		);
@@ -9165,6 +9165,22 @@ function _getResolvedLqHqHoldMinMs() {
 	);
 }
 
+function _getLqHqProbeDelayMs() {
+	return Math.max(
+		0,
+		_getResolvedLqHqHoldMinMs() - _BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS,
+	);
+}
+
+function _isWithinLqHqHold(info: TTVABStreamInfo) {
+	const holdStartedAt = Number(info?._LqHoldStartAt) || 0;
+	return Boolean(
+		__TTVAB_STATE__?.DisableAutoplayBackup !== true &&
+			holdStartedAt > 0 &&
+			Date.now() - holdStartedAt < _getResolvedLqHqHoldMinMs(),
+	);
+}
+
 function _shouldTryAutoplayFirst(info: TTVABStreamInfo) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (
@@ -9174,11 +9190,11 @@ function _shouldTryAutoplayFirst(info: TTVABStreamInfo) {
 		return false;
 	}
 	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
-	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+	const lqProbeDelayMs = _getLqHqProbeDelayMs();
 	if (
 		lqHoldStartAt > 0 &&
-		lqHoldMinMs > 0 &&
-		Date.now() - lqHoldStartAt < lqHoldMinMs &&
+		lqProbeDelayMs > 0 &&
+		Date.now() - lqHoldStartAt < lqProbeDelayMs &&
 		info?.ActiveBackupPlayerType === "autoplay"
 	) {
 		return true;
@@ -9192,13 +9208,13 @@ function _shouldTryAutoplayFirst(info: TTVABStreamInfo) {
 function _shouldHoldAutoplayBackupDuringAd(info: TTVABStreamInfo) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (_isBackupPlayerRetryCoolingDown(info, "autoplay")) return false;
-	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+	const lqProbeDelayMs = _getLqHqProbeDelayMs();
 	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
 	const holdStartedAt = lqHoldStartAt || Number(info?.LastCleanBackupAt) || 0;
 	const withinLqHoldWindow =
-		lqHoldMinMs > 0 &&
+		lqProbeDelayMs > 0 &&
 		holdStartedAt > 0 &&
-		Date.now() - holdStartedAt < lqHoldMinMs;
+		Date.now() - holdStartedAt < lqProbeDelayMs;
 
 	return Boolean(
 		info?.IsShowingAd &&
@@ -10793,8 +10809,9 @@ async function _searchBackupStream(
 										const needsStableBridgeLook = Boolean(
 											!needsSecondLook &&
 												pt !== "autoplay" &&
-												Date.now() - probationStartedAt <
-													_BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS,
+												(Date.now() - probationStartedAt <
+													_BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS ||
+													_isWithinLqHqHold(info)),
 										);
 										if (needsSecondLook || needsStableBridgeLook) {
 											const bridgedProbe =
