@@ -3398,12 +3398,13 @@ function _getNativePlaylistReturnBlocker(
 		backupAge > 5000
 	)
 		return "backup not fresh";
+	if (!text.includes("#EXT-X-PROGRAM-DATE-TIME:"))
+		return "undated native media";
 	if (
-		!text.includes("#EXT-X-PROGRAM-DATE-TIME:") ||
-		text.includes("#EXT-X-MAP:") ||
+		text.includes("#EXT-X-MAP:") !==
 		info.LastCleanBackupM3U8.includes("#EXT-X-MAP:")
 	)
-		return "undated or mapped media";
+		return "backup and native use different containers";
 	if (
 		info._LivePlaylistTimeline.identity !==
 		JSON.stringify([
