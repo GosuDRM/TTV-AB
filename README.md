@@ -74,6 +74,13 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v26.0.1 - 2026-10-30
+
+- **Brief Freeze When Ads End** - End ad breaks without reloading the player on channels Twitch delivers as fragmented MP4 video, instead of a second of no video at the end of every break.
+- **Ad Break Start on More Channels** - Keep the stream moving at the start of an ad break on channels Twitch delivers as fragmented MP4 video, with a short silent hold when the ad-free replacement stream is not ready yet, instead of risking a stall or black screen.
+- **Faster HD During Ad Breaks** - Switch from the low-quality bridge to the HD replacement stream about 8 seconds into a break instead of about 17, while still letting the bridge buffer for its full 8 seconds first.
+- **Ad Break Diagnostics** - Record in debug logs how long the player took to show video again after a reload at the end of a break, keep Twitch's second player apart from the main player in stream switch details, and log the stream's clock lead only when it changes.
+
 ### v26.0.0 - 2026-10-29
 
 - **Video Ads Beside the Stream** - Keep a blocked video ad beside the stream hidden and muted while the stream player is briefly unavailable, such as during a player restart, instead of showing it with sound for a moment and counting it twice.
@@ -92,10 +99,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v25.0.4 - 2026-10-26
 
 - **Client-Side Ad Request Details** - Record in debug logs the format of each client-side ad request, whether it came from the home page, and whether Twitch's ad server answered or the request was stopped first.
-
-### v25.0.3 - 2026-10-26
-
-- **Client-Side Ad Diagnostics** - Record in debug logs when Twitch announces or requests an ad that plays as a separate video beside the stream, and when an unrecognized video starts playing next to it, so any change in how Twitch delivers these ads shows up in logs. ([#98](https://github.com/GosuDRM/TTV-AB/issues/98))
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
