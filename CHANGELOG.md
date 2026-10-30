@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [26.0.1] - 2026-10-30
+
+Fixed
+
+- **Brief Freeze When Ads End** - End ad breaks without reloading the player on channels Twitch delivers as fragmented MP4 video, instead of a second of no video at the end of every break.
+- **Ad Break Start on More Channels** - Keep the stream moving at the start of an ad break on channels Twitch delivers as fragmented MP4 video, with a short silent hold when the ad-free replacement stream is not ready yet, instead of risking a stall or black screen.
+
+Changed
+
+- **Faster HD During Ad Breaks** - Switch from the low-quality bridge to the HD replacement stream about 8 seconds into a break instead of about 17, while still letting the bridge buffer for its full 8 seconds first.
+- **Ad Break Diagnostics** - Record in debug logs how long the player took to show video again after a reload at the end of a break, keep Twitch's second player apart from the main player in stream switch details, and log the stream's clock lead only when it changes.
+
 ## [26.0.0] - 2026-10-29
 
 Fixed
