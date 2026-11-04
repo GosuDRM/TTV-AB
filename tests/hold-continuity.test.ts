@@ -1092,6 +1092,92 @@ describe("empty hold playlist continuity", () => {
 			expect(info._LivePlaylistTimeline).toBe(timeline);
 		});
 
+		it("skips ahead through the prefetch of a backup whose newest segment would replay more than half a second", async () => {
+			const { context, info, serve } = setup();
+			context._log = vi.fn();
+			const native = await serve(
+				dated(100, "native") + prefetch("native", 103),
+			);
+			const backup = await serve(
+				dated(101, "a", 101, -1235) + prefetch("a", 104),
+				"site",
+			);
+			expect(backup).not.toContain("a-102.ts");
+			expect(numberOf(backup, "a-103")).toBe(numberOf(native, "native-102"));
+			expect(numberOf(backup, "a-104")).toBe(numberOf(native, "native-103"));
+			expect(numberOf(backup, "a-105")).toBe(numberOf(native, "native-104"));
+			expect(segments(backup)[0].discontinuity).toBeGreaterThan(
+				segments(native).at(-1).discontinuity,
+			);
+			const handoff = JSON.parse(
+				String(
+					vi
+						.mocked(context._log)
+						.mock.calls.find(([message]) =>
+							String(message).startsWith("[Continuity] handoff "),
+						)?.[0],
+				).slice("[Continuity] handoff ".length),
+			);
+			expect(handoff).toMatchObject({
+				cutoffSequence: numberOf(native, "native-102"),
+				servedSequence: numberOf(native, "native-102"),
+				gapMs: 765,
+				overlapMs: 0,
+			});
+			expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 6765);
+			const refreshed = await serve(
+				dated(102, "a", 102, -1235) + prefetch("a", 105),
+				"site",
+			);
+			expect(refreshed).not.toContain("a-103.ts");
+			expect(numberOf(refreshed, "a-104")).toBe(numberOf(backup, "a-104"));
+			expect(numberOf(refreshed, "a-105")).toBe(numberOf(backup, "a-105"));
+		});
+
+		it("keeps waiting for a crossing backup that lists no prefetch", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native") + prefetch("native", 103));
+			const crossing = dated(101, "a", 101, -1235);
+			context._rememberBackupPlaylistMetadata(info, crossing, "avc", codec, {
+				playerType: "site",
+				resolution: "1920x1080",
+				playlistUrl: "https://edge.example/site.m3u8?session=one",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+			});
+			const timeline = info._LivePlaylistTimeline;
+			expect(() =>
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					crossing,
+					info.BackupPlaylistMetadata.get(crossing),
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(info._LivePlaylistTimeline).toBe(timeline);
+		});
+
+		it("skips to the next segment instead of replaying more than half a second", async () => {
+			const { context, serve } = setup();
+			context._log = vi.fn();
+			const native = await serve(
+				dated(100, "native") + prefetch("native", 103),
+			);
+			const backup = await serve(dated(101, "a", 101, 1235), "site");
+			expect(backup).not.toContain("a-102.ts");
+			expect(segments(backup)[0].url).toContain("a-103.ts");
+			expect(numberOf(backup, "a-103")).toBe(numberOf(native, "native-103"));
+			const handoff = JSON.parse(
+				String(
+					vi
+						.mocked(context._log)
+						.mock.calls.find(([message]) =>
+							String(message).startsWith("[Continuity] handoff "),
+						)?.[0],
+				).slice("[Continuity] handoff ".length),
+			);
+			expect(handoff).toMatchObject({ gapMs: 1235, overlapMs: 0 });
+		});
+
 		it("returns to native through its prefetch when it is level with the backup", async () => {
 			const { context, info, serve } = setup();
 			await serve(dated(100, "native"));
@@ -2721,7 +2807,27 @@ describe("empty hold playlist continuity", () => {
 		expect(info._PlaylistContinuityDiagnostics.nextSourceId).toBe(2);
 	});
 
-	it.each([-51, -126, -235, -238, -500, -999])(
+	it.each([-501, -999])(
+		"skips the crossing segment instead of replaying %s ms",
+		async (skewMs) => {
+			const { serve } = setup();
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, offsetMs: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offsetMs).toISOString()}\n#EXTINF:`,
+				);
+			await serve(dated(400, 0));
+			const backup = await serve(dated(100, 4000 + skewMs), "site");
+			expect(backup).not.toContain("clean-101.ts");
+			expect(segments(backup)).toHaveLength(1);
+			expect(backup).toContain(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 8000 + skewMs).toISOString()}`,
+			);
+		},
+	);
+
+	it.each([-51, -126, -235, -238, -500])(
 		"keeps only the crossing segment when the incoming window overlaps by %s ms",
 		async (skewMs) => {
 			const { serve } = setup();

@@ -2932,17 +2932,19 @@ function _alignLivePlaylist(
 		return text;
 	}
 	const handoffToleranceMs = 50;
+	const handoffReplayLimitMs = 500;
 	let retainedIndex = entries.findIndex(
 		(entry) =>
 			entry.end > minimumTime &&
 			(entry.time >= minimumTime - handoffToleranceMs ||
-				minimumTime - entry.time < entry.end - minimumTime),
+				(minimumTime - entry.time <= handoffReplayLimitMs &&
+					minimumTime - entry.time < entry.end - minimumTime)),
 	);
 	const joinsAtServedEnd = Boolean(
 		retainedIndex < 0 &&
 			Number.isSafeInteger(minimumSequence) &&
 			(backupMetadata || previous?.backup) &&
-			Math.abs(entries.at(-1).end - minimumTime) <= handoffToleranceMs &&
+			entries.at(-1).end >= minimumTime - handoffToleranceMs &&
 			lines
 				.slice(blockStart)
 				.some((line) => line.startsWith("#EXT-X-TWITCH-PREFETCH:")),
