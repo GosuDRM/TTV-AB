@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [26.0.2] - 2026-11-04
+
+Fixed
+
+- **Freeze at the Start of Some Ad Breaks** - Switch to the ad-free replacement stream as soon as it is found when it starts slightly behind the stream, skipping ahead up to about a second and a half instead of freezing for several seconds while waiting for it to catch up.
+- **Shorter Replays When Switching Streams** - Repeat at most half a second of already watched video when switching to or from the ad-free replacement stream, instead of up to a second.
+- **Freeze at Small Gaps During Ad Breaks** - Skip a gap of up to a second in the buffered video after about a second of frozen video during an ad break, instead of staying frozen for about 3 seconds.
+
 ## [26.0.1] - 2026-10-30
 
 Fixed
