@@ -1537,7 +1537,7 @@ describe("_checkInAdPlayheadFreeze", () => {
 
 		nowSpy.mockReturnValue(100000);
 		check()(player);
-		nowSpy.mockReturnValue(103000);
+		nowSpy.mockReturnValue(101100);
 		check()(player);
 		expect(seeks).toEqual([]);
 
@@ -1548,7 +1548,7 @@ describe("_checkInAdPlayheadFreeze", () => {
 		const previousPinned = state.PinnedBackupPlayerType;
 		state.PinnedBackupPlayerType = "autoplay";
 		try {
-			nowSpy.mockReturnValue(105500);
+			nowSpy.mockReturnValue(101300);
 			check()(player);
 		} finally {
 			g._log = previousLog;
@@ -1558,13 +1558,50 @@ describe("_checkInAdPlayheadFreeze", () => {
 		expect(seeks[0]).toBeCloseTo(1464.45, 2);
 		expect(playerTaskCalls).toEqual([]);
 		expect(log).toHaveBeenCalledWith(
-			"In-ad playhead frozen 5.5s at 1463.93s; seeking 0.47s past buffered gap (buffered 1400.00-1463.97, 1464.40-1466.01; backup autoplay)",
+			"In-ad playhead frozen 1.3s at 1463.93s; seeking 0.47s past buffered gap (buffered 1400.00-1463.97, 1464.40-1466.01; backup autoplay)",
 			"warning",
 		);
 	});
 
+	it("waits for a sustained freeze before skipping buffered video or a gap over a second", () => {
+		const { video, seeks } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1465.2, 1470],
+			],
+			1463.93,
+		);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+		nowSpy.mockReturnValue(100000);
+		check()(player);
+		nowSpy.mockReturnValue(103000);
+		check()(player);
+		expect(seeks).toEqual([]);
+		nowSpy.mockReturnValue(105500);
+		check()(player);
+		expect(seeks).toEqual([expect.closeTo(1465.25, 6)]);
+		expect(playerTaskCalls).toEqual([]);
+
+		const ahead = makeRangesVideo(
+			[
+				[1400, 1464.5],
+				[1464.6, 1470],
+			],
+			1463.93,
+		);
+		const aheadPlayer = { getHTMLVideoElement: () => ahead.video };
+		(g._resetInAdFreezeState as () => void)();
+		nowSpy.mockReturnValue(200000);
+		check()(aheadPlayer);
+		nowSpy.mockReturnValue(203000);
+		check()(aheadPlayer);
+		expect(ahead.seeks).toEqual([]);
+		expect(playerTaskCalls).toEqual([]);
+	});
+
 	it.each([1272.892125, 1273.024, 1273.06])(
-		"crosses the logged small buffer gap after a sustained freeze at %s without reloading",
+		"crosses the logged small buffer gap after a short freeze at %s without reloading",
 		(currentTime) => {
 			const { video, seeks } = makeRangesVideo(
 				[
@@ -1576,10 +1613,10 @@ describe("_checkInAdPlayheadFreeze", () => {
 			const player = { getHTMLVideoElement: () => video };
 			const now = vi.spyOn(Date, "now").mockReturnValue(100000);
 			check()(player, "testchannel", "live:testchannel");
-			now.mockReturnValue(104999);
+			now.mockReturnValue(101100);
 			check()(player, "testchannel", "live:testchannel");
 			expect(seeks).toEqual([]);
-			now.mockReturnValue(105500);
+			now.mockReturnValue(101300);
 			check()(player, "testchannel", "live:testchannel");
 			expect(seeks).toEqual([expect.closeTo(1273.113312, 6)]);
 			expect(playerTaskCalls).toEqual([]);

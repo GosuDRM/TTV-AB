@@ -143,6 +143,9 @@ const _POST_AD_RECOVERY_STABLE_PLAYBACK_MS = 6000;
 const _IN_AD_FREEZE_DETECT_MS = 5000;
 const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
 const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
+const _IN_AD_HOLE_SKIP_MS = 1200;
+const _IN_AD_HOLE_EDGE_SECONDS = 0.3;
+const _IN_AD_HOLE_MAX_SECONDS = 1;
 const _AD_REBUFFER_MIN_STALL_MS = 500;
 const _AD_REBUFFER_STALLING_INTERVAL_LOST_MS = 250;
 const _AD_REBUFFER_MAX_SAMPLE_GAP_MS = 5000;
@@ -4688,7 +4691,7 @@ function _describeBufferedRanges(video) {
 	return ranges.length > 0 ? ranges.join(", ") : "none";
 }
 
-function _seekPastBufferedGap(video, currentTime) {
+function _seekPastBufferedGap(video, currentTime, maxGapSeconds = Infinity) {
 	if (!video || !(video.buffered?.length > 1)) return 0;
 	for (let bi = 0; bi < video.buffered.length; bi++) {
 		let gapStart = 0;
@@ -4698,6 +4701,7 @@ function _seekPastBufferedGap(video, currentTime) {
 			continue;
 		}
 		if (gapStart > currentTime) {
+			if (gapStart - currentTime > maxGapSeconds) return 0;
 			try {
 				video.currentTime = gapStart + 0.05;
 			} catch {
@@ -7123,24 +7127,28 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		_InAdFreezeState.lastCurrentTime = currentTime;
 		return;
 	}
-	if (
-		now - _InAdFreezeState.firstFrozenAt < _IN_AD_FREEZE_DETECT_MS ||
-		now - _InAdFreezeState.lastActionAt < _IN_AD_FREEZE_ACTION_REPEAT_MS
-	) {
+	const frozenMs = now - _InAdFreezeState.firstFrozenAt;
+	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
+	const actionDue =
+		frozenMs >= _IN_AD_FREEZE_DETECT_MS &&
+		now - _InAdFreezeState.lastActionAt >= _IN_AD_FREEZE_ACTION_REPEAT_MS;
+	const atBufferedHole =
+		frozenMs >= _IN_AD_HOLE_SKIP_MS &&
+		Number(video.readyState) < 3 &&
+		contiguousEnd - currentTime <= _IN_AD_HOLE_EDGE_SECONDS;
+	if (!actionDue && !atBufferedHole) {
 		return;
 	}
-	_InAdFreezeState.lastActionAt = now;
-	_InAdFreezeState.actionCount++;
-	const frozenSeconds =
-		Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
-	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
+	const frozenSeconds = Math.round(frozenMs / 100) / 10;
 	const bufferDrained =
 		contiguousEnd - currentTime <
 		_getLowLatencyDangerZone(_getPlayerCore(player));
 	const bufferedRanges = _describeBufferedRanges(video);
-	const gapJumped = bufferDrained
-		? _seekPastBufferedGap(video, currentTime)
-		: 0;
+	const gapJumped = actionDue
+		? bufferDrained
+			? _seekPastBufferedGap(video, currentTime)
+			: 0
+		: _seekPastBufferedGap(video, currentTime, _IN_AD_HOLE_MAX_SECONDS);
 	if (gapJumped > 0) {
 		_log(
 			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s; seeking ${gapJumped.toFixed(2)}s past buffered gap (buffered ${bufferedRanges}; backup ${__TTVAB_STATE__?.PinnedBackupPlayerType || "none"})`,
@@ -7149,6 +7157,11 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		_resetInAdFreezeState(safeMediaKey);
 		return;
 	}
+	if (!actionDue) {
+		return;
+	}
+	_InAdFreezeState.lastActionAt = now;
+	_InAdFreezeState.actionCount++;
 	const shouldReload =
 		_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS &&
 		!_isNativeDocumentHidden();
