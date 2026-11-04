@@ -74,6 +74,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v26.0.2 - 2026-11-04
+
+- **Freeze at the Start of Some Ad Breaks** - Switch to the ad-free replacement stream as soon as it is found when it starts slightly behind the stream, skipping ahead up to about a second and a half instead of freezing for several seconds while waiting for it to catch up.
+- **Shorter Replays When Switching Streams** - Repeat at most half a second of already watched video when switching to or from the ad-free replacement stream, instead of up to a second.
+- **Freeze at Small Gaps During Ad Breaks** - Skip a gap of up to a second in the buffered video after about a second of frozen video during an ad break, instead of staying frozen for about 3 seconds.
+
 ### v26.0.1 - 2026-10-30
 
 - **Brief Freeze When Ads End** - End ad breaks without reloading the player on channels Twitch delivers as fragmented MP4 video, instead of a second of no video at the end of every break.
@@ -95,10 +101,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Restart Message for Streams Already Playing** - Record in debug logs whether the one-time player restart for a stream that was already playing was accepted, instead of always reporting a restart.
 - **Stream Return Diagnostics** - Record in debug logs why the stream stays on the ad-free replacement after an ad break, to help track down breaks where returning to the stream takes several minutes.
 - **Less Work on Twitch Pages** - Look up the stream player less often: not when the stream's own video starts playing or changes volume, and once instead of twice per playback check.
-
-### v25.0.4 - 2026-10-26
-
-- **Client-Side Ad Request Details** - Record in debug logs the format of each client-side ad request, whether it came from the home page, and whether Twitch's ad server answered or the request was stopped first.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
