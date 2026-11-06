@@ -1238,6 +1238,40 @@ function _hookWorkerFetch() {
 			return null;
 		}
 	};
+	const pictureByPicturePlaylistMediaKeys = new Map<string, string>();
+	const getMasterRequestPlayerType = (masterUrl) => {
+		try {
+			const tokenPlayerType = JSON.parse(
+				new URL(masterUrl).searchParams.get("token") || "null",
+			)?.player_type;
+			if (
+				typeof tokenPlayerType === "string" &&
+				/^[a-z_-]{1,40}$/i.test(tokenPlayerType)
+			)
+				return tokenPlayerType;
+		} catch {}
+		return "unknown";
+	};
+	const rememberPictureByPicturePlaylists = (master, masterUrl, mediaKey) => {
+		let count = 0;
+		for (const line of master.split(/\r?\n/)) {
+			const uri = line.trim();
+			if (!uri || uri.startsWith("#")) continue;
+			let key = null;
+			try {
+				key = _getMediaPlaylistSessionKey(new URL(uri, masterUrl).href);
+			} catch {}
+			if (!key) continue;
+			pictureByPicturePlaylistMediaKeys.delete(key);
+			pictureByPicturePlaylistMediaKeys.set(key, mediaKey);
+			count++;
+		}
+		while (pictureByPicturePlaylistMediaKeys.size > 32)
+			pictureByPicturePlaylistMediaKeys.delete(
+				pictureByPicturePlaylistMediaKeys.keys().next().value,
+			);
+		return count;
+	};
 	const observedPlaybackMediaKeys = new Map();
 	const requestedMediaBootstrapRecoveryCycles = new Set();
 	const isPlaybackObservationCurrent = (owner) =>
@@ -2155,6 +2189,30 @@ function _hookWorkerFetch() {
 				assertMasterRequestCurrent();
 				const serverTime = _getServerTime(encodings);
 				let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
+				const requestPlayerType = getMasterRequestPlayerType(url);
+				if (
+					requestPlayerType === "picture-by-picture" &&
+					playbackContext.MediaType === "live" &&
+					__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+					typeof info?.EncodingsM3U8 === "string" &&
+					info.EncodingsM3U8 &&
+					encodings.includes("#EXT-X-STREAM-INF")
+				) {
+					const qualityCount = rememberPictureByPicturePlaylists(
+						encodings,
+						url,
+						_normalizeMediaKey(playbackContext.MediaKey),
+					);
+					_log(
+						`[Trace] Picture-by-picture player keeps its own stream (${qualityCount} ${qualityCount === 1 ? "quality" : "qualities"}); main player catalog unchanged`,
+						"info",
+					);
+					reportPlaybackWorkerBootstrapObserved(
+						playbackContext,
+						playbackRequestOwner,
+					);
+					return new Response(encodings, getResponseInit(response));
+				}
 				const pendingPostAdNativeMaster = await getPendingPostAdNativeMaster(
 					info,
 					playbackContext,
@@ -2198,17 +2256,6 @@ function _hookWorkerFetch() {
 				assertMasterRequestCurrent();
 				if (recoveredNativeMaster) {
 					encodings = recoveredNativeMaster.master;
-					let requestPlayerType = "unknown";
-					try {
-						const tokenPlayerType = JSON.parse(
-							new URL(url).searchParams.get("token") || "null",
-						)?.player_type;
-						if (
-							typeof tokenPlayerType === "string" &&
-							/^[a-z_-]{1,40}$/i.test(tokenPlayerType)
-						)
-							requestPlayerType = tokenPlayerType;
-					} catch {}
 					_log(
 						`[Recovery] Preserved live-validated native qualities after a reduced master (${recoveredNativeMaster.reducedVariantCount} offered up to ${recoveredNativeMaster.reducedHeight}p; page ${Number(__TTVAB_STATE__.PagePlaybackVisibleSinceAt) > 0 ? "visible" : "hidden"}; player ${requestPlayerType})${recoveredNativeMaster.preserveNativeSession ? " while post-ad playback is recovering" : ""}`,
 						"success",
@@ -2429,6 +2476,19 @@ function _hookWorkerFetch() {
 					}
 					if (!isPlaybackObservationCurrent(playbackRequestOwner)) {
 						throw _createCodecHandoffAbortError(mediaRequestSignal);
+					}
+					const pictureByPictureMediaKey =
+						pictureByPicturePlaylistMediaKeys.get(
+							_getMediaPlaylistSessionKey(url),
+						);
+					if (
+						pictureByPictureMediaKey &&
+						pictureByPictureMediaKey ===
+							_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) &&
+						!_hasPlaylistAdMarkers(text) &&
+						!_playlistHasKnownAdSegments(text, { includeCached: true })
+					) {
+						return new Response(text, getResponseInit(response));
 					}
 					const responseMediaKey = _normalizeMediaKey(responseInfo?.MediaKey);
 					const responseHasExactActiveAdContext = Boolean(
