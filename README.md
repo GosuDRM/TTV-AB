@@ -74,6 +74,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v26.0.3 - 2026-11-06
+
+- **Brief Restart When Ad Breaks End** - Return to the stream without pausing and resuming the player when the ad-free replacement already matches the stream's quality, instead of a short restart at the end of every break with Low Quality Fallback off.
+- **Picture-by-Picture Player During Ads** - Leave Twitch's small picture-by-picture player on its own stream, so it no longer loads a second 1080p stream or disrupts the main player's ad-free replacement.
+- **Freeze at a Missing Segment** - Skip a hole of up to two and a half seconds in the buffered video after about a second of frozen video outside ad breaks, instead of staying frozen for several seconds.
+
 ### v26.0.2 - 2026-11-04
 
 - **Freeze at the Start of Some Ad Breaks** - Switch to the ad-free replacement stream as soon as it is found when it starts slightly behind the stream, skipping ahead up to about a second and a half instead of freezing for several seconds while waiting for it to catch up.
@@ -86,21 +92,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Ad Break Start on More Channels** - Keep the stream moving at the start of an ad break on channels Twitch delivers as fragmented MP4 video, with a short silent hold when the ad-free replacement stream is not ready yet, instead of risking a stall or black screen.
 - **Faster HD During Ad Breaks** - Switch from the low-quality bridge to the HD replacement stream about 8 seconds into a break instead of about 17, while still letting the bridge buffer for its full 8 seconds first.
 - **Ad Break Diagnostics** - Record in debug logs how long the player took to show video again after a reload at the end of a break, keep Twitch's second player apart from the main player in stream switch details, and log the stream's clock lead only when it changes.
-
-### v26.0.0 - 2026-10-29
-
-- **Video Ads Beside the Stream** - Keep a blocked video ad beside the stream hidden and muted while the stream player is briefly unavailable, such as during a player restart, instead of showing it with sound for a moment and counting it twice.
-- **Generate Log for Frozen Tabs in Firefox** - Include a frozen Twitch tab's last saved debug log details when you opened the channel from elsewhere on Twitch, instead of leaving its section empty.
-- **Ad Break Timer After the Ads End** - Hide the Ad Break Timer once the ads in a break are over, instead of counting for as long as the ad-free replacement stream is kept, and show it again if more ads arrive in the same break.
-- **Blocked Ad Count Updates** - Update the blocked ad count and toolbar badge right after an ad is blocked, instead of up to 5 seconds later when watch time was being saved at the same moment.
-- **Ad Spoofing for Extra Ad Markers** - Keep skipping ad markers beyond an ad break's declared ad count, instead of reporting them on the next playlist update.
-- **Player Updates After a Failed Message** - Keep sending ad blocking updates to the player after one update cannot be delivered, instead of stopping all later updates until the player restarts.
-- **Saving Statistics Under Load** - Keep confirming saved statistics while the extension is busy, instead of rechecking them on every later save for up to 3 days.
-- **Ad Progress in Long Sessions** - Keep ad progress for at most 32 streams, so long sessions with many banner and preview players stop accumulating it.
-- **Debug Log Snapshots During Ad Recovery** - Save a snapshot only when post-ad recovery moves to a new step and include that step's log line, instead of saving repeated snapshots without the newest line.
-- **Restart Message for Streams Already Playing** - Record in debug logs whether the one-time player restart for a stream that was already playing was accepted, instead of always reporting a restart.
-- **Stream Return Diagnostics** - Record in debug logs why the stream stays on the ad-free replacement after an ad break, to help track down breaks where returning to the stream takes several minutes.
-- **Less Work on Twitch Pages** - Look up the stream player less often: not when the stream's own video starts playing or changes volume, and once instead of twice per playback check.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [26.0.3] - 2026-11-06
+
+Fixed
+
+- **Brief Restart When Ad Breaks End** - Return to the stream without pausing and resuming the player when the ad-free replacement already matches the stream's quality, instead of a short restart at the end of every break with Low Quality Fallback off.
+- **Picture-by-Picture Player During Ads** - Leave Twitch's small picture-by-picture player on its own stream, so it no longer loads a second 1080p stream or disrupts the main player's ad-free replacement.
+- **Freeze at a Missing Segment** - Skip a hole of up to two and a half seconds in the buffered video after about a second of frozen video outside ad breaks, instead of staying frozen for several seconds.
+
 ## [26.0.2] - 2026-11-04
 
 Fixed
