@@ -1770,6 +1770,27 @@ async function _isAdEndStable(
 		if (exactNativeCandidateState === "ready" && !ownedNativeRecoveryTarget) {
 			if (requestAdContext && typeof requestAdContext === "object") {
 				requestAdContext.exactNativeRecoveryReady = true;
+				const exactCandidateUrl = _getMediaPlaylistSessionKey(candidateUrl);
+				const exactCandidate = exactCandidateUrl
+					? info.Urls?.[exactCandidateUrl]
+					: null;
+				if (
+					declaredPodComplete &&
+					!info.IsUsingModifiedM3U8 &&
+					!info.HevcReloadPendingAfterHold &&
+					exactCandidate?.Resolution &&
+					exactCandidate.Codecs
+				) {
+					requestAdContext.verifiedNativeRecoveryTarget = {
+						master: info.EncodingsM3U8,
+						masterUrl: info.UsherBaseUrl,
+						codec: exactCandidate.Codecs,
+						resolution: exactCandidate.Resolution,
+						playlistUrl: exactCandidateUrl,
+						requestUrl: exactCandidateUrl,
+						handoffId: null,
+					};
+				}
 			}
 			return info.IsHoldingBackupAfterAd ? "ended" : "ended-with-backup-hold";
 		}
