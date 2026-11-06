@@ -28,6 +28,8 @@ const _PlayerBufferState = {
 	liveEdgeReloadMediaKey: null as string | null,
 	gapJumpLastPosition: -1,
 	gapJumpStuckTicks: 0,
+	gapJumpCheckedAt: 0,
+	gapJumpHoleSinceAt: 0,
 	postAdUnhealthyCount: 0,
 	postAdRecoveryStartedAt: 0,
 	postAdLastCurrentTime: 0,
@@ -146,6 +148,7 @@ const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
 const _IN_AD_HOLE_SKIP_MS = 1200;
 const _IN_AD_HOLE_EDGE_SECONDS = 0.3;
 const _IN_AD_HOLE_MAX_SECONDS = 1;
+const _LIVE_HOLE_MAX_SECONDS = 2.5;
 const _AD_REBUFFER_MIN_STALL_MS = 500;
 const _AD_REBUFFER_STALLING_INTERVAL_LOST_MS = 250;
 const _AD_REBUFFER_MAX_SAMPLE_GAP_MS = 5000;
@@ -1053,6 +1056,7 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 	_PlayerBufferState.liveEdgeStarveCount = 0;
 	_PlayerBufferState.gapJumpLastPosition = -1;
 	_PlayerBufferState.gapJumpStuckTicks = 0;
+	_PlayerBufferState.gapJumpHoleSinceAt = 0;
 	_PlayerBufferState.postAdUnhealthyCount = 0;
 	_PlayerBufferState.postAdRecoveryStartedAt = 0;
 	_PlayerBufferState.postAdLastCurrentTime = 0;
@@ -4714,6 +4718,7 @@ function _seekPastBufferedGap(video, currentTime, maxGapSeconds = Infinity) {
 }
 
 function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
+	const now = Date.now();
 	const lastPosition = _PlayerBufferState.gapJumpLastPosition;
 	const advanced = lastPosition >= 0 && currentTime > lastPosition + 0.2;
 	if (advanced || lastPosition < 0 || currentTime < lastPosition) {
@@ -4721,19 +4726,38 @@ function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
 	} else {
 		_PlayerBufferState.gapJumpStuckTicks++;
 	}
+	const checkedAt = _PlayerBufferState.gapJumpCheckedAt;
 	_PlayerBufferState.gapJumpLastPosition = currentTime;
+	_PlayerBufferState.gapJumpCheckedAt = now;
 
-	if (
-		_PlayerBufferState.gapJumpStuckTicks < 3 ||
-		readyState >= 3 ||
-		!video ||
-		!(video.buffered?.length > 1)
-	) {
+	const hasLaterRange = Boolean(video && video.buffered?.length > 1);
+	const atBufferedHole = Boolean(
+		hasLaterRange &&
+			readyState < 3 &&
+			currentTime >= lastPosition &&
+			_getContiguousBufferedEnd(video, currentTime) - currentTime <=
+				_IN_AD_HOLE_EDGE_SECONDS,
+	);
+	if (!atBufferedHole || now < checkedAt || now - checkedAt > 2000) {
+		_PlayerBufferState.gapJumpHoleSinceAt = atBufferedHole ? now : 0;
+	} else if (!_PlayerBufferState.gapJumpHoleSinceAt) {
+		_PlayerBufferState.gapJumpHoleSinceAt = now;
+	}
+	const sustained = _PlayerBufferState.gapJumpStuckTicks >= 3;
+	const holeDue = Boolean(
+		_PlayerBufferState.gapJumpHoleSinceAt > 0 &&
+			now - _PlayerBufferState.gapJumpHoleSinceAt >= _IN_AD_HOLE_SKIP_MS,
+	);
+	if ((!sustained && !holeDue) || readyState >= 3 || !hasLaterRange) {
 		return false;
 	}
 
 	const bufferedRanges = _describeBufferedRanges(video);
-	const jumped = _seekPastBufferedGap(video, currentTime);
+	const jumped = _seekPastBufferedGap(
+		video,
+		currentTime,
+		sustained ? Infinity : _LIVE_HOLE_MAX_SECONDS,
+	);
 	if (jumped > 0) {
 		_log(
 			`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${jumped.toFixed(2)}s past it (buffered ${bufferedRanges})`,
@@ -4741,11 +4765,12 @@ function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
 		);
 		_PlayerBufferState.gapJumpStuckTicks = 0;
 		_PlayerBufferState.gapJumpLastPosition = -1;
+		_PlayerBufferState.gapJumpHoleSinceAt = 0;
 		_PlayerBufferState.lastFixTime = Date.now();
 		_PlayerBufferState.numSame = 0;
 		return true;
 	}
-	_PlayerBufferState.gapJumpStuckTicks = 0;
+	if (sustained) _PlayerBufferState.gapJumpStuckTicks = 0;
 	return false;
 }
 
@@ -8621,6 +8646,7 @@ function _monitorPlayerBuffering() {
 			_PlayerBufferState.liveEdgeStarveCount === 0 &&
 			_PlayerBufferState.fixAttempts === 0 &&
 			_PlayerBufferState.postAdGraceUntil === 0 &&
+			_PlayerBufferState.gapJumpHoleSinceAt === 0 &&
 			_cachedPlayerRef !== null;
 		return inSteadyState && nextDelay < _PLAYER_BUFFER_STEADY_DELAY_MS
 			? _PLAYER_BUFFER_STEADY_DELAY_MS

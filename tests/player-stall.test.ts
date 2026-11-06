@@ -1284,9 +1284,78 @@ describe("_trySeekPastFrozenBufferGap", () => {
 		const s = bufferState();
 		s.gapJumpLastPosition = -1;
 		s.gapJumpStuckTicks = 0;
+		s.gapJumpCheckedAt = 0;
+		s.gapJumpHoleSinceAt = 0;
 		s.lastFixTime = 0;
 		s.numSame = 5;
 	}
+
+	function tickAt(times: number[], tick: () => boolean) {
+		const nowSpy = vi.spyOn(Date, "now");
+		try {
+			return times.map((time) => {
+				nowSpy.mockReturnValue(time);
+				return tick();
+			});
+		} finally {
+			nowSpy.mockRestore();
+		}
+	}
+
+	it("skips a single missing segment 1.2 seconds after the playhead reaches the hole", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[2278.04, 2308.01],
+			[2310.04, 2312.66],
+		]);
+		const results = tickAt([100000, 100900, 101500], () =>
+			fn()(video, 2307.94, 2),
+		);
+		expect(results).toEqual([false, false, true]);
+		expect(seeks).toEqual([expect.closeTo(2310.09, 6)]);
+		expect(bufferState().gapJumpHoleSinceAt).toBe(0);
+	});
+
+	it("waits for the sustained freeze before skipping a hole wider than one segment", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[37, 50],
+		]);
+		expect(
+			tickAt([100000, 100900, 101500], () => fn()(video, 33.9, 2)),
+		).toEqual([false, false, false]);
+		expect(seeks).toEqual([]);
+		expect(tickAt([102100], () => fn()(video, 33.9, 2))).toEqual([true]);
+		expect(seeks).toEqual([expect.closeTo(37.05, 6)]);
+	});
+
+	it("does not skip early while the playhead still has buffered video ahead", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		expect(tickAt([100000, 100900, 101500], () => fn()(video, 33, 2))).toEqual([
+			false,
+			false,
+			false,
+		]);
+		expect(seeks).toEqual([]);
+	});
+
+	it("restarts the hole timer when monitor samples are not continuous", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		expect(
+			tickAt([100000, 105000, 105600], () => fn()(video, 33.9, 2)),
+		).toEqual([false, false, false]);
+		expect(seeks).toEqual([]);
+		expect(bufferState().gapJumpHoleSinceAt).toBe(105000);
+	});
 
 	function makeGapVideo(ranges: Array<[number, number]>) {
 		const seeks: number[] = [];
