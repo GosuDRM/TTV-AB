@@ -280,6 +280,65 @@ function setupHdNativeReturn(datedMedia = true, mappedMedia = false) {
 
 describe("compatible native playlist return", () => {
 	it.each([false, true])(
+		"returns from a complete pod's HD backup by playlist without a rebuild latch, fallback disabled=%s",
+		async (disabled) => {
+			const f = setupHdNativeReturn();
+			f.state.DisableAutoplayBackup = disabled;
+			f.info.HevcReloadPendingAfterHold = false;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				output = await f.poll();
+			}
+			expect(output).toContain("native-");
+			expect(output).not.toContain("stitched-ad");
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(f.info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: nativeUrl,
+				reloadAt: 0,
+				consumed: true,
+			});
+			expect(f.token).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["undated media", false, false, "backup not being served"],
+		["a changed backup quality", true, true, "backup quality or codec differs"],
+	])(
+		"keeps pause/resume for a complete pod's HD backup with %s",
+		async (_label, datedMedia, changedQuality, reason) => {
+			const f = setupHdNativeReturn(datedMedia);
+			f.info.HevcReloadPendingAfterHold = false;
+			const log = vi.fn();
+			f.context._log = log;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				output = await f.poll();
+				if (changedQuality && f.info.LastCleanBackupM3U8) {
+					const metadata = f.info.BackupPlaylistMetadata.get(
+						f.info.LastCleanBackupM3U8,
+					);
+					if (metadata) metadata.resolution = "1280x720";
+				}
+			}
+			expect(output).toContain("native-");
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: false,
+			});
+			expect(
+				log.mock.calls
+					.map(([message]) => message)
+					.find((message) => message.startsWith("[Break] ended ")),
+			).toContain(`native return by pause/resume (${reason})`);
+		},
+	);
+
+	it.each([false, true])(
 		"returns from a served HD backup by playlist when both use fragmented AVC media, fallback disabled=%s",
 		async (disabled) => {
 			const f = setupHdNativeReturn(true, true);
