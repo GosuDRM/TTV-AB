@@ -12997,6 +12997,9 @@ describe("clean-playback reduced master recovery", () => {
 		"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
 	const reducedUrl = `${masterUrl.replace("owned", "reduced")}&token=${encodeURIComponent(JSON.stringify({ player_type: "site" }))}`;
 	const newerUrl = masterUrl.replace("owned", "newer");
+	const pictureByPictureUrl = `${masterUrl.replace("owned", "pbp")}&token=${encodeURIComponent(JSON.stringify({ player_type: "picture-by-picture" }))}`;
+	const pictureByPictureMediaUrl =
+		"https://edge.example/360.m3u8?token=reduced";
 	const playlist = (sequence: number, ad = false) =>
 		`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n${ad ? '#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad"\n' : ""}#EXTINF:2,live\nhttps://edge.example/segment-${sequence}.ts`;
 
@@ -13031,11 +13034,17 @@ describe("clean-playback reduced master recovery", () => {
 			sequence: 500,
 			probe: null as ((url: string, look: number) => Response | null) | null,
 			looks: new Map<string, number>(),
+			pictureByPictureMedia: null as string | null,
 		};
 		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
 			if (url === masterUrl) return new Response(fullMaster);
-			if (url === reducedUrl) return new Response(lowMaster);
+			if (url === reducedUrl || url === pictureByPictureUrl)
+				return new Response(lowMaster);
+			if (url === pictureByPictureMediaUrl)
+				return new Response(
+					control.pictureByPictureMedia ?? playlist(++control.sequence),
+				);
 			if (url === newerUrl)
 				return new Response(
 					fullMaster.replaceAll("token=owned", "token=newer"),
@@ -13161,6 +13170,59 @@ describe("clean-playback reduced master recovery", () => {
 			}
 		},
 	);
+
+	it("keeps a picture-by-picture player on its own clean stream without touching the main catalog", async () => {
+		const session = await setup();
+		try {
+			const postMessage = session.runtime.scope.postMessage as ReturnType<
+				typeof vi.fn
+			>;
+			const before = {
+				master: session.info.EncodingsM3U8,
+				masterUrl: session.info.UsherBaseUrl,
+				urls: Object.keys(session.info.Urls as object).sort(),
+				lastCleanNativeUrl: session.info.LastCleanNativeUrl,
+				timeline: session.info._LivePlaylistTimeline,
+			};
+			expect(await (await session.fetch(pictureByPictureUrl)).text()).toBe(
+				session.lowMaster,
+			);
+			expect(session.rawFetch).toHaveBeenCalledTimes(1);
+			const clean = playlist(700);
+			session.control.pictureByPictureMedia = clean;
+			expect(await (await session.fetch(pictureByPictureMediaUrl)).text()).toBe(
+				clean,
+			);
+			expect(session.rawFetch).toHaveBeenCalledTimes(2);
+			expect({
+				master: session.info.EncodingsM3U8,
+				masterUrl: session.info.UsherBaseUrl,
+				urls: Object.keys(session.info.Urls as object).sort(),
+				lastCleanNativeUrl: session.info.LastCleanNativeUrl,
+				timeline: session.info._LivePlaylistTimeline,
+			}).toEqual(before);
+			expect(session.info._LivePlaylistTimeline).toBe(before.timeline);
+			expect(
+				postMessage.mock.calls
+					.map(([value]) => value?.message as Record<string, unknown>)
+					.filter((message) => message?.key === "LogEntry")
+					.map((message) => (message.value as Record<string, unknown>).m),
+			).toContain(
+				"[Trace] Picture-by-picture player keeps its own stream (1 quality); main player catalog unchanged",
+			);
+			const adMarked = playlist(701, true);
+			session.control.pictureByPictureMedia = adMarked;
+			const processed = session
+				.fetch(pictureByPictureMediaUrl)
+				.then((result) => result.text())
+				.catch((error) => `failed:${error?.name}`);
+			await vi.advanceTimersByTimeAsync(10000);
+			expect(await processed).not.toBe(adMarked);
+			expect(session.info.IsShowingAd).toBe(true);
+		} finally {
+			session.restore();
+		}
+	});
 
 	it("rechecks consumed native qualities for new ads before retaining their master", async () => {
 		const session = await setup();
