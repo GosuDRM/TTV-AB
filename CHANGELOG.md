@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [27.0.0] - 2026-11-19
+
+Fixed
+
+- **Audio Delay After Ad Breaks on HEVC and AV1 Streams** - Return to the stream without pausing and resuming the player when the ad-free replacement uses the same HEVC or AV1 video format and quality as the stream, instead of restarting playback at the end of the break, which could leave the audio playing behind the video. ([#101](https://github.com/GosuDRM/TTV-AB/issues/101))
+- **Ad Blocking After a Player Error** - Keep handling ad breaks and recording debug logs when Twitch's player recovers on its own after an internal error, instead of leaving the stream without ad break recovery for the rest of the visit. ([#103](https://github.com/GosuDRM/TTV-AB/issues/103))
+
+Added
+
+- **HD Replacement Diagnostics** - Record in debug logs why an ad-free HD replacement stream could not take over from the low-quality bridge, how far behind it was, and how far each stream's clock runs ahead, to help track down breaks that stay at low quality after the ads end. ([#102](https://github.com/GosuDRM/TTV-AB/issues/102))
+
 ## [26.0.3] - 2026-11-06
 
 Fixed
