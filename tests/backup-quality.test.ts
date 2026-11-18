@@ -1043,6 +1043,50 @@ describe("HD backup probation through playlist polling", () => {
 		},
 	);
 
+	it.each([
+		[
+			"Live handoff playlist is behind the served broadcast time",
+			{
+				minimumTime: 10_000,
+				lastTime: 6_600,
+				lastEndTime: 8_600,
+				candidateEdgeMs: 1_200,
+				servedEdgeMs: 2_600,
+			},
+			"newest segment ends 1.4s before the served end; clock lead: this source +1.2s, served source +2.6s",
+		],
+		[
+			"Live handoff playlist is behind the served broadcast time",
+			{
+				minimumTime: 10_000,
+				lastTime: 9_000,
+				lastEndTime: 11_000,
+				candidateEdgeMs: -300,
+				servedEdgeMs: Number.NaN,
+			},
+			"newest segment would repeat 1.0s of served video and lists no low-latency segment to join",
+		],
+		[
+			"Live handoff requires unambiguous broadcast timestamps",
+			{},
+			"unclear broadcast timestamps",
+		],
+		["Live handoff requires a full dated playlist", {}, "partial playlist"],
+		["Live handoff requires an explicit byte range", {}, "unusable byte range"],
+		["Unexpected", {}, "continuity error"],
+	])(
+		"explains an HD source that cannot join the served timeline: %s",
+		(message, diagnostic, expected) => {
+			const f = setupProbation();
+			expect(
+				f.context._describeTimelineJoinRefusal(
+					new DOMException(message, "AbortError"),
+					diagnostic,
+				),
+			).toBe(expected);
+		},
+	);
+
 	it("keeps each source's clean history while sources take turns falling behind the served timeline", async () => {
 		const f = setupProbation();
 		f.state.BackupPlayerTypes = ["site", "embed", "autoplay"];
@@ -1095,6 +1139,18 @@ describe("HD backup probation through playlist polling", () => {
 			type: "embed",
 			startedAt: 1_001_600,
 		});
+		const refusals = log.mock.calls
+			.map(([message]) => String(message))
+			.filter((message) => message.includes("cannot join the served timeline"));
+		expect(refusals).toEqual(
+			turns.map(({ behind }) =>
+				expect.stringMatching(
+					new RegExp(
+						`^\\[Trace\\] ${behind} playlist cannot join the served timeline yet \\(newest segment would repeat 2\\.0s of served video and lists no low-latency segment to join(; clock lead: this source [+-]\\d+\\.\\ds, served source [+-]\\d+\\.\\ds)?\\); retaining clean autoplay bridge$`,
+					),
+				),
+			),
+		);
 		expect(f.info._BackupProbationByType.get("site")).toMatchObject({
 			startedAt: 1_000_000,
 			cleanChecks: 4,

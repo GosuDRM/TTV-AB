@@ -195,6 +195,7 @@ type TTVABPlaylistAlignmentDiagnostic = {
 	joinsAtServedEnd?: boolean;
 	restartsNativeNumbering?: boolean;
 	firstTime?: number;
+	lastTime?: number;
 	lastEndTime?: number;
 	retainedTime?: number;
 	skippedSegments?: number;
@@ -202,6 +203,8 @@ type TTVABPlaylistAlignmentDiagnostic = {
 	internalGapMs?: number;
 	internalOverlapMs?: number;
 	clockShiftMs?: number;
+	candidateEdgeMs?: number;
+	servedEdgeMs?: number;
 };
 
 type TTVABAdBreakTimeline = {
