@@ -7140,6 +7140,315 @@ describe("worker recovery lifecycle", () => {
 	});
 });
 
+describe("crashed playback worker that keeps playing", () => {
+	const mediaKey = "live:testchannel";
+	type HarnessWorker = ReturnType<
+		typeof installWorkerMessageHarness
+	>["worker"] &
+		Record<string, unknown>;
+	let harness: ReturnType<typeof installWorkerMessageHarness>;
+	let worker: HarnessWorker;
+	let player: { core: { worker: unknown } };
+	let pageGeneration = 0;
+	const state = () => g.__TTVAB_STATE__ as Record<string, unknown>;
+	const recovery = () =>
+		T<(context: object) => Record<string, unknown>>("_getWorkerRecoveryState")({
+			MediaKey: mediaKey,
+		});
+	const ownerGeneration = () =>
+		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).get(
+			mediaKey,
+		);
+	const tracked = () => (g._S as { workers: unknown[] }).workers;
+	const posted = () =>
+		worker.messages.map(
+			(message) => (message as { message?: { key?: string } }).message?.key,
+		);
+	const observe = (
+		requestStartedAt = Date.now(),
+		overrides: Record<string, unknown> = {},
+	) =>
+		worker.emitMessage({
+			key: "PlaybackWorkerObserved",
+			mediaType: "live",
+			channel: "testchannel",
+			mediaKey,
+			pageMediaKey: mediaKey,
+			pageContextGeneration: pageGeneration,
+			requestStartedAt,
+			...overrides,
+		});
+	const fail = () =>
+		worker.dispatchEvent(
+			Object.assign(new Event("error"), {
+				message: "RuntimeError: index out of bounds",
+			}),
+		);
+	const crashAndReload = () => {
+		fail();
+		expect(worker.__TTVABCrashed).toBe(true);
+		vi.advanceTimersByTime(1000);
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		expect(recovery().phase).toBe("awaiting-successor");
+		vi.advanceTimersByTime(1000);
+	};
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		state().PagePlaybackContextGeneration = 7;
+		harness = installWorkerMessageHarness();
+		worker = harness.worker as HarnessWorker;
+		pageGeneration = Number(state().PagePlaybackContextGeneration) || 0;
+		player = { core: { worker } };
+		vi.stubGlobal("_getPlayerAndState", () => ({
+			player,
+			state: {
+				props: { content: { type: "live", channelLogin: "testchannel" } },
+			},
+		}));
+		vi.stubGlobal("_getPlayerCore", (value: typeof player) => value?.core);
+		vi.spyOn(g, "_installPageSideM3U8Override").mockReturnValue(undefined);
+		vi.stubGlobal("_showWorkerRecoveryNotice", vi.fn());
+		vi.stubGlobal("_clearWorkerRecoveryNotice", vi.fn());
+		vi.stubGlobal("_hasUserPauseIntent", () => false);
+		vi.stubGlobal("_isNativeDocumentHidden", () => false);
+		g._doPlayerTask = vi.fn(
+			(_pause: boolean, _reload: boolean, options: Record<string, unknown>) => {
+				if (options?.allowCrashedWorkerReload !== true) return false;
+				recordTestPlayerReload(mediaKey);
+				return true;
+			},
+		);
+		emitHarnessWorkerPong(worker);
+		observe();
+		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
+	});
+
+	afterEach(() => {
+		harness.restore();
+		vi.clearAllTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it("returns the same worker to ad handling once it proves playback after the recovery reload", () => {
+		const log = vi.spyOn(g, "_log");
+		crashAndReload();
+		worker.messages.length = 0;
+		observe();
+		expect(posted()).toEqual(["Ping"]);
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(tracked()).toContain(worker);
+		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
+		expect(recovery()).toMatchObject({
+			phase: "stabilizing",
+			activeEpoch: 0,
+			attempts: 1,
+			stableGeneration: worker.__TTVABGeneration,
+		});
+		expect(posted()).toEqual(
+			expect.arrayContaining([
+				"UpdateToggleState",
+				"UpdateAdSpoofingState",
+				"UpdateAutoplayBackupState",
+				"UpdatePreferredQualityGroup",
+				"UpdatePlayerIsPlaying",
+			]),
+		);
+		expect(g._clearWorkerRecoveryNotice).toHaveBeenCalledWith(mediaKey);
+		expect(log).toHaveBeenCalledWith(
+			"[Recovery] Worker #g1 kept playing after its error; resuming ad break handling for live:testchannel",
+			"success",
+		);
+		for (let tick = 0; tick < 14; tick++) {
+			vi.advanceTimersByTime(5000);
+			emitHarnessWorkerPong(worker);
+			observe();
+		}
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		expect(recovery().phase).toBe("idle");
+		expect(recovery().attempts).toBe(1);
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+		expect(
+			log.mock.calls.some(([message]) =>
+				/did not produce a healthy playback worker|timed out waiting for a usable player/.test(
+					String(message),
+				),
+			),
+		).toBe(false);
+	});
+
+	it("keeps a retired worker's logs and accepts its ad events once revived", () => {
+		const appendLog = vi.spyOn(g, "_appendPageLogEntry");
+		crashAndReload();
+		worker.emitMessage({
+			key: "LogEntry",
+			value: { t: Date.now(), l: "info", m: "still alive" },
+		});
+		expect(appendLog).toHaveBeenCalledWith(
+			expect.objectContaining({ m: "still alive", w: true, g: 1 }),
+		);
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(
+			T<
+				(data: object, worker: object, context: object, page: object) => boolean
+			>("_canHandleCrashedWorkerMessage")(
+				{ key: "AdEnded" },
+				worker,
+				{},
+				{ MediaKey: mediaKey },
+			),
+		).toBe(true);
+	});
+
+	it.each([
+		["a request that started before the recovery reload", "early"],
+		["another player's worker", "player"],
+		["a newer page generation", "generation"],
+		["a newer healthy playback worker", "newer"],
+		["a crash found by a missed heartbeat", "heartbeat"],
+		["an observation older than the heartbeat window", "stale"],
+		["another stream's observation", "media"],
+	])("keeps the worker retired for %s", (_label, condition) => {
+		const log = vi.spyOn(g, "_log");
+		if (condition === "heartbeat") {
+			T<(worker: object, context: object, message: string) => boolean>(
+				"_recoverCrashedWorker",
+			)(worker, {}, "Worker heartbeat timed out");
+			vi.advanceTimersByTime(2000);
+		} else {
+			crashAndReload();
+		}
+		const reloadAt = Number(recovery().reloadDispatchedAt) || Date.now();
+		if (condition === "player") player.core.worker = {};
+		if (condition === "generation")
+			state().PagePlaybackContextGeneration = pageGeneration + 1;
+		if (condition === "newer") {
+			tracked().push({
+				__TTVABGeneration: Number(worker.__TTVABGeneration) + 1,
+				__TTVABCreatedAt: Date.now(),
+				__TTVABPageMediaKey: mediaKey,
+				__TTVABFirstPongAt: Date.now(),
+				__TTVABLastPongAt: Date.now(),
+				__TTVABPlaybackObservedAtByMediaKey: new Map([[mediaKey, Date.now()]]),
+			});
+		}
+		observe(
+			condition === "early" ? reloadAt - 1 : Date.now(),
+			condition === "media"
+				? { mediaKey: "live:otherchannel", channel: "otherchannel" }
+				: {},
+		);
+		if (condition === "stale") vi.advanceTimersByTime(16000);
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(true);
+		expect(tracked()).not.toContain(worker);
+		if (condition !== "stale")
+			expect(
+				log.mock.calls.filter(([message]) =>
+					String(message).startsWith("[Recovery] Worker #g1 still sends"),
+				),
+			).toHaveLength(1);
+	});
+
+	it("revives the current player's worker beside an older healthy auxiliary worker", () => {
+		const auxiliary = worker;
+		worker = harness.createWorker() as HarnessWorker;
+		player.core.worker = worker;
+		emitHarnessWorkerPong(worker);
+		observe();
+		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
+		crashAndReload();
+		emitHarnessWorkerPong(auxiliary);
+		auxiliary.emitMessage({
+			key: "PlaybackWorkerObserved",
+			mediaType: "live",
+			channel: "testchannel",
+			mediaKey,
+			pageMediaKey: mediaKey,
+			pageContextGeneration: pageGeneration,
+			requestStartedAt: Date.now(),
+		});
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
+	});
+
+	it("crashes a revived worker again when it stops answering heartbeats", () => {
+		crashAndReload();
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		vi.advanceTimersByTime(30000);
+		expect(worker.__TTVABCrashed).toBe(true);
+		expect(worker.__TTVABCrashRevivable).not.toBe(true);
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(true);
+	});
+
+	it("revives a worker that errors again without spending another reload", () => {
+		crashAndReload();
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		vi.advanceTimersByTime(5000);
+		emitHarnessWorkerPong(worker);
+		fail();
+		expect(worker.__TTVABCrashed).toBe(true);
+		vi.advanceTimersByTime(3000);
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		expect(recovery().attempts).toBe(1);
+		expect(recovery().phase).toBe("stabilizing");
+	});
+
+	it("waits for the first crash's recovery reload before reviving", () => {
+		fail();
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(true);
+		vi.advanceTimersByTime(1000);
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		vi.advanceTimersByTime(1000);
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+	});
+
+	it("revives after recovery was exhausted when the worker proves playback late", () => {
+		crashAndReload();
+		vi.advanceTimersByTime(70000);
+		expect(recovery().phase).toBe("exhausted");
+		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+		observe();
+		emitHarnessWorkerPong(worker);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(recovery().phase).toBe("stabilizing");
+		expect(g._clearWorkerRecoveryNotice).toHaveBeenCalledWith(mediaKey);
+		const playerTask = g._doPlayerTask as ReturnType<typeof vi.fn>;
+		const tasksAtRevival = playerTask.mock.calls.length;
+		for (let tick = 0; tick < 12; tick++) {
+			vi.advanceTimersByTime(5000);
+			emitHarnessWorkerPong(worker);
+			observe();
+		}
+		expect(playerTask).toHaveBeenCalledTimes(tasksAtRevival);
+		expect(worker.__TTVABCrashed).toBe(false);
+		expect(
+			playerTask.mock.calls.filter(
+				([, , options]) => options?.allowCrashedWorkerReload === true,
+			),
+		).toHaveLength(1);
+	});
+});
+
 describe("worker recovery readiness and replacement races", () => {
 	const context = { MediaKey: "live:testchannel" };
 	const recovery = () =>
@@ -14795,6 +15104,7 @@ describe("worker mixed-codec master selection", () => {
 					"PlaybackWorkerBootstrapObserved",
 					"PlaybackWorkerObserved",
 				]);
+				expect(observations[1].requestStartedAt).toBeGreaterThan(0);
 				emitHarnessWorkerPong(harness.worker);
 				for (const message of observations) {
 					expect(message).toMatchObject({
