@@ -74,6 +74,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v27.0.0 - 2026-11-19
+
+- **Audio Delay After Ad Breaks on HEVC and AV1 Streams** - Return to the stream without pausing and resuming the player when the ad-free replacement uses the same HEVC or AV1 video format and quality as the stream, instead of restarting playback at the end of the break, which could leave the audio playing behind the video. ([#101](https://github.com/GosuDRM/TTV-AB/issues/101))
+- **Ad Blocking After a Player Error** - Keep handling ad breaks and recording debug logs when Twitch's player recovers on its own after an internal error, instead of leaving the stream without ad break recovery for the rest of the visit. ([#103](https://github.com/GosuDRM/TTV-AB/issues/103))
+- **HD Replacement Diagnostics** - Record in debug logs why an ad-free HD replacement stream could not take over from the low-quality bridge, how far behind it was, and how far each stream's clock runs ahead, to help track down breaks that stay at low quality after the ads end. ([#102](https://github.com/GosuDRM/TTV-AB/issues/102))
+
 ### v26.0.3 - 2026-11-06
 
 - **Brief Restart When Ad Breaks End** - Return to the stream without pausing and resuming the player when the ad-free replacement already matches the stream's quality, instead of a short restart at the end of every break with Low Quality Fallback off.
@@ -85,13 +91,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Freeze at the Start of Some Ad Breaks** - Switch to the ad-free replacement stream as soon as it is found when it starts slightly behind the stream, skipping ahead up to about a second and a half instead of freezing for several seconds while waiting for it to catch up.
 - **Shorter Replays When Switching Streams** - Repeat at most half a second of already watched video when switching to or from the ad-free replacement stream, instead of up to a second.
 - **Freeze at Small Gaps During Ad Breaks** - Skip a gap of up to a second in the buffered video after about a second of frozen video during an ad break, instead of staying frozen for about 3 seconds.
-
-### v26.0.1 - 2026-10-30
-
-- **Brief Freeze When Ads End** - End ad breaks without reloading the player on channels Twitch delivers as fragmented MP4 video, instead of a second of no video at the end of every break.
-- **Ad Break Start on More Channels** - Keep the stream moving at the start of an ad break on channels Twitch delivers as fragmented MP4 video, with a short silent hold when the ad-free replacement stream is not ready yet, instead of risking a stall or black screen.
-- **Faster HD During Ad Breaks** - Switch from the low-quality bridge to the HD replacement stream about 8 seconds into a break instead of about 17, while still letting the bridge buffer for its full 8 seconds first.
-- **Ad Break Diagnostics** - Record in debug logs how long the player took to show video again after a reload at the end of a break, keep Twitch's second player apart from the main player in stream switch details, and log the stream's clock lead only when it changes.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
