@@ -593,6 +593,7 @@ function _isWorkerEvent(
 				playlistUrl: "string",
 				codec: "string",
 				decoderCodec: "string",
+				requestStartedAt: "number",
 			});
 		case "PlaybackWorkerBootstrapObserved":
 		case "MediaBootstrapRecoveryNeeded":

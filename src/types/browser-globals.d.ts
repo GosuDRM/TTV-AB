@@ -81,6 +81,10 @@ interface Worker {
 	__TTVABIntentionallyTerminated?: boolean;
 	__TTVABCrashed?: boolean;
 	__TTVABCrashedAt?: number;
+	__TTVABCrashRevivable?: boolean;
+	__TTVABRevivalObservedAt?: number;
+	__TTVABRevivalMediaKey?: string | null;
+	__TTVABRetiredMessageLogged?: boolean;
 	__TTVABCreatedAt?: number;
 	__TTVABLastPongAt?: number;
 	__TTVABFirstPongAt?: number;

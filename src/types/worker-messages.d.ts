@@ -171,6 +171,7 @@ type TTVABWorkerEventPayloads = {
 		playlistUrl?: string | null;
 		codec?: string | null;
 		decoderCodec?: string | null;
+		requestStartedAt?: number;
 	};
 	PlaybackWorkerBootstrapObserved: Record<never, never>;
 	MediaBootstrapRecoveryNeeded: Record<never, never>;

@@ -1332,6 +1332,7 @@ function _hookWorkerFetch() {
 					codec: observedCodec,
 					decoderCodec: observedDecoderCodec,
 					handoffId: observedHandoffId,
+					requestStartedAt: Math.max(0, Number(requestOwner.startedAt) || 0),
 				});
 				observedPlaybackMediaKeys.delete(observationKey);
 				observedPlaybackMediaKeys.set(observationKey, now);
@@ -1885,6 +1886,7 @@ function _hookWorkerFetch() {
 					0,
 					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
 				),
+				startedAt: Date.now(),
 				signal:
 					opts?.signal ||
 					(typeof Request !== "undefined" && resource instanceof Request
@@ -3022,6 +3024,7 @@ function _getWorkerRecoveryState(context, create = true) {
 			successorDeadlineAt: 0,
 			stableGeneration: 0,
 			stableSince: 0,
+			revivedGeneration: 0,
 			terminalRearmCycleStartedAt: 0,
 			terminalRearmAttemptedAt: 0,
 			hiddenLastMediaTime: -1,
@@ -3070,8 +3073,10 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	) {
 		return;
 	}
-	state.attempts = 0;
-	state.lastAttemptAt = 0;
+	if (state.revivedGeneration !== workerGeneration) {
+		state.attempts = 0;
+		state.lastAttemptAt = 0;
+	}
 	state.lastReloadAt = 0;
 	state.playerWaitDeadlineAt = 0;
 	state.playerWaitSuspendedAt = 0;
@@ -3622,6 +3627,7 @@ function _canHandleCrashedWorkerMessage(
 		(typeof _isActivePictureInPicturePlaybackContext === "function" &&
 			_isActivePictureInPicturePlaybackContext(workerContext));
 	if (!contextIsCurrent) return false;
+	if (key === "LogEntry") return true;
 	const contextKey = _getWorkerRecoveryContextKey(workerContext);
 	const recoveryState = _getWorkerRecoveryState(workerContext, false);
 	const explicitlyRetiredThroughGeneration = Math.max(
@@ -3646,6 +3652,194 @@ function _canHandleCrashedWorkerMessage(
 			(playbackOwnerGeneration <= 0 ||
 				workerGeneration >= playbackOwnerGeneration),
 	);
+}
+
+function _getCrashedWorkerRevival(worker, now = Date.now()) {
+	if (
+		!worker?.__TTVABCrashed ||
+		worker.__TTVABCrashRevivable !== true ||
+		worker.__TTVABIntentionallyTerminated
+	)
+		return null;
+	const generation = Math.max(0, Number(worker.__TTVABGeneration) || 0);
+	const context = _getWorkerPlaybackContext(worker);
+	const mediaKey = _normalizeMediaKey(context.MediaKey);
+	const recoveryState = _getWorkerRecoveryState(context, false);
+	const crashedAt = Math.max(0, Number(worker.__TTVABCrashedAt) || 0);
+	const reloadAt = Math.max(0, Number(recoveryState?.reloadDispatchedAt) || 0);
+	const proofAfter =
+		reloadAt >= crashedAt
+			? reloadAt
+			: Math.max(0, Number(recoveryState?.attempts) || 0) > 0
+				? crashedAt
+				: 0;
+	if (
+		generation <= 0 ||
+		!mediaKey ||
+		crashedAt <= 0 ||
+		proofAfter <= 0 ||
+		!recoveryState ||
+		recoveryState.failedGeneration !== generation ||
+		recoveryState.pageContextGeneration !==
+			Math.max(
+				0,
+				Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+			) ||
+		mediaKey !== _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
+		_isPlaybackContextMismatch(
+			context,
+			_getPlaybackContextFromUrl(window.location.href),
+		) ||
+		Math.max(
+			0,
+			Number(
+				_WorkerPlaybackOwnerGenerationByContext.get(
+					_getWorkerRecoveryContextKey(context),
+				),
+			) || 0,
+		) > generation ||
+		!_isWorkerCurrentPlayerMedia(worker, mediaKey) ||
+		Math.max(
+			0,
+			Number(
+				_getHealthyObservedPlaybackWorker(context, worker, now, crashedAt, true)
+					?.__TTVABGeneration,
+			) || 0,
+		) > generation
+	)
+		return null;
+	return { mediaKey, recoveryState, proofAfter, generation };
+}
+
+function _noteRetiredWorkerMessage(worker, data, now = Date.now()) {
+	if (data?.key === "PlaybackWorkerObserved") {
+		const revival = _getCrashedWorkerRevival(worker, now);
+		if (
+			revival &&
+			_normalizeMediaKey(data.mediaKey) === revival.mediaKey &&
+			_normalizeMediaKey(data.pageMediaKey) === revival.mediaKey &&
+			Number(data.pageContextGeneration) ===
+				revival.recoveryState.pageContextGeneration &&
+			Math.max(0, Number(data.requestStartedAt) || 0) >= revival.proofAfter
+		) {
+			worker.__TTVABRevivalObservedAt = now;
+			worker.__TTVABRevivalMediaKey = revival.mediaKey;
+			try {
+				_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+			} catch {}
+			return;
+		}
+	}
+	if (worker.__TTVABRetiredMessageLogged) return;
+	worker.__TTVABRetiredMessageLogged = true;
+	_log(
+		`[Recovery] Worker #g${Math.max(0, Number(worker.__TTVABGeneration) || 0)} still sends ${data?.key || "messages"} after its crash; ignoring it unless it proves it is playing the current stream`,
+		"warning",
+	);
+}
+
+function _syncRevivedWorkerState(worker) {
+	const messages: TTVABWorkerCommand[] = [
+		{
+			key: "UpdateToggleState",
+			value: __TTVAB_STATE__.IsAdStrippingEnabled === true,
+		},
+		{
+			key: "UpdateAdSpoofingState",
+			value: __TTVAB_STATE__.DisableAdSpoofing === true,
+		},
+		{
+			key: "UpdateAutoplayBackupState",
+			value: __TTVAB_STATE__.DisableAutoplayBackup === true,
+		},
+		{
+			key: "UpdatePreferredQualityGroup",
+			value: __TTVAB_STATE__.PreferredQualityGroup || null,
+		},
+		{
+			key: "UpdatePagePlaybackVisibleSinceAt",
+			value: Math.max(
+				0,
+				Number(__TTVAB_STATE__.PagePlaybackVisibleSinceAt) || 0,
+			),
+		},
+		{ key: "UpdateAdsBlocked", value: Math.max(0, Number(_S.adsBlocked) || 0) },
+		{
+			key: "UpdatePlayerHasPlayedOnce",
+			value: __TTVAB_STATE__.PlayerHasPlayedOnce === true,
+		},
+		{
+			key: "UpdatePlayerIsPlaying",
+			value: __TTVAB_STATE__.PlayerIsPlaying === true,
+		},
+	];
+	for (const [key, value] of [
+		["UpdateDeviceId", __TTVAB_STATE__.GQLDeviceID],
+		["UpdateAuthorizationHeader", __TTVAB_STATE__.AuthorizationHeader],
+		["UpdateClientIntegrityHeader", __TTVAB_STATE__.ClientIntegrityHeader],
+		["UpdateClientVersion", __TTVAB_STATE__.ClientVersion],
+		["UpdateClientSession", __TTVAB_STATE__.ClientSession],
+		["UpdateGQLHash", __TTVAB_STATE__.PlaybackAccessTokenHash],
+	] as const) {
+		if (typeof value === "string" && value) messages.push({ key, value });
+	}
+	for (const message of messages) {
+		try {
+			_postWorkerBridgeMessage(worker, message);
+		} catch {}
+	}
+}
+
+function _reviveCrashedPlaybackWorker(worker, now = Date.now()) {
+	const observedAt = Math.max(0, Number(worker?.__TTVABRevivalObservedAt) || 0);
+	const revival = observedAt > 0 ? _getCrashedWorkerRevival(worker, now) : null;
+	if (
+		!revival ||
+		worker.__TTVABRevivalMediaKey !== revival.mediaKey ||
+		now - observedAt > HW_PONG_TIMEOUT_MS
+	)
+		return false;
+	const { mediaKey, recoveryState, generation } = revival;
+	if (recoveryState.timerID !== null) {
+		clearTimeout(recoveryState.timerID);
+		recoveryState.timerID = null;
+	}
+	worker.__TTVABCrashed = false;
+	worker.__TTVABCrashRevivable = false;
+	worker.__TTVABRetiredMessageLogged = false;
+	worker.__TTVABRevivalObservedAt = 0;
+	worker.__TTVABRevivalMediaKey = null;
+	worker.__TTVABRecoveryEpoch = 0;
+	worker.__TTVABMissedPongs = 0;
+	worker.__TTVABPlaybackPageContext = null;
+	if (!(worker.__TTVABPlaybackObservedAtByMediaKey instanceof Map)) {
+		worker.__TTVABPlaybackObservedAtByMediaKey = new Map();
+	}
+	worker.__TTVABPlaybackObservedAtByMediaKey.delete(mediaKey);
+	worker.__TTVABPlaybackObservedAtByMediaKey.set(mediaKey, observedAt);
+	recoveryState.activeEpoch = 0;
+	recoveryState.retiredThroughGeneration = Math.min(
+		Math.max(0, Number(recoveryState.retiredThroughGeneration) || 0),
+		generation - 1,
+	);
+	recoveryState.revivedGeneration = generation;
+	recoveryState.stableGeneration = generation;
+	recoveryState.stableSince = now;
+	recoveryState.playerWaitDeadlineAt = 0;
+	recoveryState.playerWaitSuspendedAt = 0;
+	recoveryState.successorDeadlineAt = 0;
+	recoveryState.waitLog = "";
+	recoveryState.phase = "stabilizing";
+	_promoteTrackedWorker(worker);
+	_syncRevivedWorkerState(worker);
+	if (typeof _clearWorkerRecoveryNotice === "function") {
+		_clearWorkerRecoveryNotice(mediaKey);
+	}
+	_log(
+		`[Recovery] Worker #g${generation} kept playing after its error; resuming ad break handling for ${mediaKey}`,
+		"success",
+	);
+	return true;
 }
 
 function _isWorkerGenerationRetired(worker, pagePlaybackContext = null) {
@@ -5970,6 +6164,7 @@ function _hookWorker() {
 				this.addEventListener("message", (e: MessageEvent<unknown>) => {
 					const data = _getWorkerEvent(e.data);
 					if (data?.key === "Pong") {
+						_reviveCrashedPlaybackWorker(this);
 						_markWorkerPong(this);
 					}
 				});
@@ -6121,6 +6316,7 @@ function _hookWorker() {
 							getCurrentPageContext(),
 						)
 					) {
+						_noteRetiredWorkerMessage(this, data);
 						return;
 					}
 					if (isStalePageContextEvent(data)) return;
@@ -7613,12 +7809,15 @@ function _hookWorker() {
 							e,
 						);
 					}
-					_recoverCrashedWorker(
-						this,
-						pagePlaybackContext,
-						`Worker #g${this.__TTVABGeneration} error: ${e.message || "Unknown error"}`,
-						"error",
-					);
+					if (
+						_recoverCrashedWorker(
+							this,
+							pagePlaybackContext,
+							`Worker #g${this.__TTVABGeneration} error: ${e.message || "Unknown error"}`,
+							"error",
+						)
+					)
+						this.__TTVABCrashRevivable = true;
 				});
 
 				this.__TTVABCreatedAt = Date.now();
