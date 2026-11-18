@@ -2760,6 +2760,7 @@ function _alignLivePlaylist(
 	}
 	if (diagnostic) {
 		diagnostic.firstTime = entries[0].time;
+		diagnostic.lastTime = entries.at(-1).time;
 		diagnostic.lastEndTime = entries.at(-1).end;
 	}
 	if (
@@ -2809,7 +2810,11 @@ function _alignLivePlaylist(
 	const previousEndTime = previous ? previous.lastEndTime - clockShift : 0;
 	if (clockShift && minimumTime > 0 && minimumTime === previous.lastEndTime)
 		minimumTime = previousEndTime;
-	if (diagnostic) diagnostic.clockShiftMs = clockShift;
+	if (diagnostic) {
+		diagnostic.clockShiftMs = clockShift;
+		diagnostic.candidateEdgeMs = candidateEdge;
+		diagnostic.servedEdgeMs = previousEdge;
+	}
 	const nativeKey = !backupMetadata && _getMediaPlaylistSessionKey(url);
 	const nativeTimeline = nativeKey
 		? info._EmptyHoldTimelineByUrl?.get?.(nativeKey)
@@ -3074,6 +3079,36 @@ function _alignLivePlaylist(
 				: null,
 	};
 	return output;
+}
+
+function _describeTimelineJoinRefusal(
+	error,
+	diagnostic: TTVABPlaylistAlignmentDiagnostic,
+) {
+	const reasons = {
+		"Live handoff requires unambiguous broadcast timestamps":
+			"unclear broadcast timestamps",
+		"Live handoff requires a full dated playlist": "partial playlist",
+		"Live handoff requires an explicit byte range": "unusable byte range",
+	};
+	if (
+		error?.message !==
+		"Live handoff playlist is behind the served broadcast time"
+	)
+		return Object.hasOwn(reasons, error?.message)
+			? reasons[error.message]
+			: "continuity error";
+	const seconds = (value) => (value / 1000).toFixed(1);
+	const lead = (value) =>
+		`${value >= 0 ? "+" : "-"}${seconds(Math.abs(value))}s`;
+	const lag = Number(diagnostic.minimumTime) - Number(diagnostic.lastEndTime);
+	const replay = Number(diagnostic.minimumTime) - Number(diagnostic.lastTime);
+	const clockLead =
+		Number.isFinite(diagnostic.candidateEdgeMs) &&
+		Number.isFinite(diagnostic.servedEdgeMs)
+			? `; clock lead: this source ${lead(diagnostic.candidateEdgeMs)}, served source ${lead(diagnostic.servedEdgeMs)}`
+			: "";
+	return `${lag > 0 ? `newest segment ends ${seconds(lag)}s before the served end` : `newest segment would repeat ${seconds(replay)}s of served video and lists no low-latency segment to join`}${clockLead}`;
 }
 
 function _logPlaylistContinuity(
@@ -10815,6 +10850,8 @@ async function _searchBackupStream(
 											pt !== "autoplay" &&
 											_shouldBridgeHeldAutoplayDuringSearch(info)
 										) {
+											const joinDiagnostic: TTVABPlaylistAlignmentDiagnostic =
+												{};
 											try {
 												_alignLivePlaylist(
 													info,
@@ -10828,12 +10865,14 @@ async function _searchBackupStream(
 														codec: selectedCodecIdentity,
 													},
 													false,
+													"",
+													joinDiagnostic,
 												);
 											} catch (error) {
 												if (error?.name !== "AbortError") throw error;
 												timelineProbation ||= nextProbation;
 												_log(
-													`[Trace] ${pt} playlist cannot join the served timeline yet; retaining clean autoplay bridge`,
+													`[Trace] ${pt} playlist cannot join the served timeline yet (${_describeTimelineJoinRefusal(error, joinDiagnostic)}); retaining clean autoplay bridge`,
 													"info",
 												);
 												break;
