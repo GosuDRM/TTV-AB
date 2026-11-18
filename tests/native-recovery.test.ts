@@ -278,6 +278,37 @@ function setupHdNativeReturn(datedMedia = true, mappedMedia = false) {
 	return { ...f, poll, dated };
 }
 
+function setupEnhancedNativeReturn(codec = hevc) {
+	const f = setupHdNativeReturn(true, true);
+	const native = f.info.ResolutionList[0];
+	native.Codecs = codec;
+	Object.assign(f.info, {
+		HevcReloadPendingAfterHold: false,
+		SustainedNativeResolution: native,
+		ActiveBackupResolution: native.Resolution,
+		LastCleanBackupResolution: native.Resolution,
+		LastCleanBackupCodecFamily: f.context._getVideoCodecFamily(codec),
+		LastCleanBackupCodec: codec,
+		EnhancedDecoderCodecFamily: f.context._getVideoCodecFamily(codec),
+		EnhancedDecoderCodec: f.context._getVideoCodecIdentity(codec),
+	});
+	f.state.PreferredQualityGroup = "chunked";
+	f.info.BackupEncodingsM3U8Cache.site = {
+		...f.info.BackupEncodingsM3U8Cache.site,
+		m3u8: `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${native.Resolution},CODECS="${codec}"\n${backupUrl}`,
+	};
+	let sequence = 500;
+	const poll = async () => {
+		f.advance(2000);
+		return f.context._processM3U8(
+			enhancedUrl,
+			f.dated(playlist(++sequence, "native")),
+			f.fetch,
+		);
+	};
+	return { ...f, native, poll };
+}
+
 describe("compatible native playlist return", () => {
 	it.each([false, true])(
 		"returns from a complete pod's HD backup by playlist without a rebuild latch, fallback disabled=%s",
@@ -357,6 +388,139 @@ describe("compatible native playlist return", () => {
 				continuePlayback: true,
 				refreshAccessToken: false,
 			});
+		},
+	);
+
+	it.each([
+		["HEVC", false, hevc],
+		["HEVC", true, hevc],
+		["AV1", false, "av01.0.12M.10.0.110.09.16.09.0,mp4a.40.2"],
+	])(
+		"returns from a same-codec %s HD backup by playlist without pausing the enhanced decoder, fallback disabled=%s",
+		async (_label, disabled, codec) => {
+			const f = setupEnhancedNativeReturn(codec);
+			f.state.DisableAutoplayBackup = disabled;
+			const log = vi.fn();
+			f.context._log = log;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				output = await f.poll();
+			}
+			expect(output).toContain("native-");
+			expect(output).toContain(
+				'#EXT-X-MAP:URI="https://edge.example/init.mp4"',
+			);
+			expect(output).not.toMatch(/backup-|stitched-ad/);
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(
+				log.mock.calls
+					.map(([message]) => message)
+					.find((message) => message.startsWith("[Break] ended ")),
+			).toMatch(
+				/ -> native 2560x1440 @\d+\.\ds; native return by playlist; measured /,
+			);
+			expect(f.info.EnhancedDecoderCodec).toBe(
+				f.context._getVideoCodecIdentity(codec),
+			);
+			expect(f.info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: enhancedUrl,
+				reloadAt: 0,
+				consumed: true,
+			});
+			expect(f.token).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		[
+			"a different HEVC profile backup",
+			"backup quality or codec differs",
+			(f) => {
+				const metadata = f.info.BackupPlaylistMetadata.get(
+					f.info.LastCleanBackupM3U8,
+				);
+				f.info.BackupPlaylistMetadata.set(f.info.LastCleanBackupM3U8, {
+					...metadata,
+					codec: "hev1.2.4.L150.90.0.0.0.0.0",
+				});
+				f.info.LastCleanBackupCodec = "hev1.2.4.L150.90.0.0.0.0.0";
+			},
+		],
+		[
+			"a retained rebuild latch",
+			"codec handoff or enhanced decoder",
+			(f) => {
+				f.info.HevcReloadPendingAfterHold = true;
+			},
+		],
+	])(
+		"keeps the enhanced decoder rebuild for %s",
+		async (_label, reason, change) => {
+			const f = setupEnhancedNativeReturn();
+			const log = vi.fn();
+			f.context._log = log;
+			await f.poll();
+			change(f);
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				await f.poll();
+				if (!f.restored()) change(f);
+			}
+			expect(f.restored()).toMatchObject({
+				requiresReload: true,
+				continuePlayback: false,
+			});
+			expect(log.mock.calls.map(([message]) => message)).toContain(
+				`[Trace] Native playlist verified clean after silent backup hold; reloading player after backup hold (${reason})`,
+			);
+		},
+	);
+
+	it.each([
+		["a pending codec handoff", "codec handoff or enhanced decoder"],
+		["an unknown decoder codec", "codec handoff or enhanced decoder"],
+		["a different decoder codec", "codec handoff or enhanced decoder"],
+		["a different decoder family", "codec handoff or enhanced decoder"],
+		["no enhanced decoder ownership", "native target mismatch"],
+	])(
+		"refuses the enhanced playlist return with %s",
+		async (condition, reason) => {
+			const f = setupEnhancedNativeReturn();
+			await f.poll();
+			f.advance(2000);
+			const request = {
+				exactNativeRecoveryOwned: true,
+				verifiedNativeRecoveryTarget: {
+					playlistUrl: enhancedUrl,
+					resolution: f.native.Resolution,
+					codec: f.native.Codecs,
+				},
+			};
+			const text = f.dated(playlist(800, "native"));
+			const blocker = () =>
+				f.context._getNativePlaylistReturnBlocker(
+					f.info,
+					enhancedUrl,
+					text,
+					request,
+				);
+			expect(blocker()).toBe(null);
+			if (condition === "a pending codec handoff")
+				f.info._CodecHandoffPendingId = "handoff-1";
+			else if (condition === "an unknown decoder codec")
+				f.info.EnhancedDecoderCodec = null;
+			else if (condition === "a different decoder codec")
+				f.info.EnhancedDecoderCodec = "hev1.2.4.l150.90.0.0.0.0.0";
+			else if (condition === "a different decoder family")
+				f.info.EnhancedDecoderCodecFamily = "av1";
+			else {
+				f.info.EnhancedDecoderCodecFamily = null;
+				f.info.EnhancedDecoderCodec = null;
+			}
+			expect(blocker()).toBe(reason);
 		},
 	);
 

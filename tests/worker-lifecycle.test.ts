@@ -12874,6 +12874,144 @@ describe("injected worker ad playlist validation", () => {
 		}
 	});
 
+	it("returns an HEVC stream from its same-codec HD backup by playlist in the injected worker", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({
+			preserveBlobSources: true,
+		});
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const variantUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const codec = "hev1.1.6.L150.90.0.0.0.0.0";
+		const master = (type: string) =>
+			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=2560x1440,VIDEO="chunked",CODECS="${codec},mp4a.40.2"\n${type === "native" ? variantUrl : `https://edge.example/${type}/index.m3u8`}`;
+		let offset = 0;
+		let nativeHasAds = true;
+		const start = Date.parse("2026-10-06T00:05:30Z");
+		const media = (type: string) => {
+			const sequence = 500 + offset / 2000;
+			return `#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n#EXT-X-MAP:URI="https://edge.example/${type}/init.mp4"\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:2,live\nhttps://edge.example/${type}/segment-${sequence}.mp4`;
+		};
+		const nativeFetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = String(input);
+				if (url.includes("gql.twitch.tv")) {
+					const body = JSON.parse(String(options?.body));
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: {
+								signature: "test",
+								value: body.variables.playerType,
+							},
+						},
+					});
+				}
+				if (url.includes("usher.ttvnw.net")) {
+					return new Response(
+						master(new URL(url).searchParams.get("token") || "native"),
+					);
+				}
+				if (url === variantUrl && !nativeHasAds)
+					return new Response(media("native"));
+				if (url === variantUrl)
+					return new Response(
+						media("stitched-ad")
+							.replace(",live", ",stitched-ad")
+							.replace(
+								"#EXTINF",
+								'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-POD-LENGTH="1",X-TV-TWITCH-AD-POD-POSITION="1"\n#EXTINF',
+							),
+					);
+				return new Response(media("site"));
+			},
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+			runtime.scope.Date = Date;
+			runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				CurrentAdMediaKey: "live:testchannel",
+				PreferredQualityGroup: "chunked",
+				BackupPlayerTypes: ["site", "autoplay"],
+				DisableAutoplayBackup: true,
+				DisableAdSpoofing: true,
+			});
+			const workerFetch = runtime.scope.fetch as typeof fetch;
+			await workerFetch(masterUrl);
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			Object.assign(info, {
+				IsShowingAd: true,
+				IsUsingBackupStream: true,
+				VisibleAdStartedAt: 991_000,
+				ActiveBackupPlayerType: "site",
+				LastCleanBackupPlayerType: "site",
+				ActiveBackupResolution: "2560x1440",
+				LastCleanBackupResolution: "2560x1440",
+				LastCleanBackupCodec: codec,
+				LastCleanBackupCodecFamily: "hevc",
+				LastCleanBackupM3U8: media("site"),
+				LastCleanBackupAt: 999_000,
+			});
+			(info.BackupEncodingsM3U8Cache as Record<string, unknown>).site = {
+				m3u8: master("site"),
+				baseUrl: masterUrl,
+			};
+			const first = await (await workerFetch(variantUrl)).text();
+			expect(first).toContain("/site/");
+			expect(first).not.toContain("stitched-ad");
+			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+			expect(info.HevcReloadPendingAfterHold).toBe(false);
+			nativeHasAds = false;
+			const messages = () =>
+				(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+					([message]) =>
+						(message as { message: Record<string, unknown> }).message,
+				);
+			const restored = () =>
+				messages().find((message) => message?.key === "NativePlaybackRestored");
+			let output = "";
+			for (let index = 0; index < 60 && !restored(); index++) {
+				vi.setSystemTime(Date.now() + 2000);
+				offset += 2000;
+				output = await (await workerFetch(variantUrl)).text();
+				expect(output).not.toContain("stitched-ad");
+			}
+			expect(restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(output).toContain("/native/");
+			expect(output).toContain(
+				'#EXT-X-MAP:URI="https://edge.example/native/init.mp4"',
+			);
+			expect(output).not.toMatch(/\/(site|autoplay)\//);
+			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+			expect(
+				messages().filter(
+					(message) =>
+						message?.key === "ReloadPlayer" ||
+						message?.key === "PauseResumePlayer",
+				),
+			).toHaveLength(0);
+			expect(
+				nativeFetch.mock.calls.some(([url]) =>
+					String(url).includes("/autoplay/"),
+				),
+			).toBe(false);
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+
 	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
 		"passes clean %s Twitch metadata through without starting ad recovery",
 		async (codec) => {
