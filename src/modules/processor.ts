@@ -3387,14 +3387,24 @@ function _getNativePlaylistReturnBlocker(
 	);
 	const backupAt = Number(info?.LastCleanBackupAt) || 0;
 	const backupAge = Date.now() - backupAt;
+	const hasEnhancedDecoder = Boolean(
+		info?.EnhancedDecoderCodecFamily || info?.EnhancedDecoderCodec,
+	);
+	const enhancedDecoderCodec = _getVideoCodecIdentity(
+		info?.EnhancedDecoderCodec,
+	);
 	if (requestContext?.exactNativeRecoveryOwned !== true)
 		return "native proof not owned";
 	if (info?.MediaType !== "live") return "not live";
 	if (
 		info.IsUsingModifiedM3U8 ||
-		info.EnhancedDecoderCodecFamily ||
-		info.EnhancedDecoderCodec ||
-		info._CodecHandoffPendingId
+		info._CodecHandoffPendingId ||
+		(hasEnhancedDecoder &&
+			(info.HevcReloadPendingAfterHold ||
+				!enhancedDecoderCodec ||
+				enhancedDecoderCodec !== codec ||
+				_getVideoCodecFamily(info.EnhancedDecoderCodecFamily) !==
+					_getVideoCodecFamily(codec)))
 	)
 		return "codec handoff or enhanced decoder";
 	if (
@@ -3408,7 +3418,7 @@ function _getNativePlaylistReturnBlocker(
 		target.playlistUrl !== nativeUrl ||
 		!native?.Resolution ||
 		target.resolution !== native.Resolution ||
-		_getVideoCodecFamily(codec) !== "avc" ||
+		(!hasEnhancedDecoder && _getVideoCodecFamily(codec) !== "avc") ||
 		_getVideoCodecIdentity(target.codec) !== codec
 	)
 		return "native target mismatch";
