@@ -2849,6 +2849,12 @@ function _isWorkerLifecycleThrottled(playbackContext = null) {
 	);
 }
 
+function _getWorkerFreshnessMs(playbackContext = null) {
+	return _isWorkerLifecycleThrottled(playbackContext)
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
+}
+
 function _getWorkerRecoveryContextKey(context) {
 	const normalizedContext = _normalizePlaybackContext(context);
 	if (normalizedContext.MediaKey) return normalizedContext.MediaKey;
@@ -3059,9 +3065,7 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	if (!state) return;
 	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
 	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
-	const observationFreshnessMs = _isWorkerLifecycleThrottled(context)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	const observationFreshnessMs = _getWorkerFreshnessMs(context);
 	if (
 		state.phase !== "stabilizing" ||
 		state.stableGeneration !== workerGeneration ||
@@ -3135,11 +3139,9 @@ function _isWorkerHeartbeatHealthy(
 	}
 	const firstPongAt = Math.max(0, Number(worker.__TTVABFirstPongAt) || 0);
 	const lastPongAt = Math.max(0, Number(worker.__TTVABLastPongAt) || 0);
-	const heartbeatTimeoutMs = _isWorkerLifecycleThrottled(
+	const heartbeatTimeoutMs = _getWorkerFreshnessMs(
 		playbackContext || _getWorkerPlaybackContext(worker),
-	)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	);
 	return (
 		firstPongAt > 0 && lastPongAt > 0 && now - lastPongAt <= heartbeatTimeoutMs
 	);
@@ -3166,9 +3168,7 @@ function _promoteWorkerPlaybackOwner(
 		0,
 		Number(_WorkerPlaybackOwnerGenerationByContext.get(contextKey)) || 0,
 	);
-	const observationFreshnessMs = _isWorkerLifecycleThrottled(context)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	const observationFreshnessMs = _getWorkerFreshnessMs(context);
 	if (
 		generation > currentGeneration &&
 		now - observationAt > observationFreshnessMs
@@ -3220,9 +3220,7 @@ function _beginExhaustedWorkerRecoveryStabilization(
 	if (_isPlaybackContextMismatch(workerContext, context)) return false;
 	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
 	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
-	const observationFreshnessMs = _isWorkerLifecycleThrottled(context)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	const observationFreshnessMs = _getWorkerFreshnessMs(context);
 	const playbackOwnerGeneration = Math.max(
 		0,
 		Number(
@@ -3434,9 +3432,7 @@ function _getQualifiedReplacementWorker(
 		0,
 		Number(minimumGeneration) || 0,
 	);
-	const observationFreshnessMs = _isWorkerLifecycleThrottled(playbackContext)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	const observationFreshnessMs = _getWorkerFreshnessMs(playbackContext);
 	let replacement = null;
 	let replacementGeneration = 0;
 	for (const candidate of _S.workers) {
@@ -3529,9 +3525,7 @@ function _getHealthyObservedPlaybackWorker(
 ) {
 	const contextKey = _getWorkerRecoveryContextKey(playbackContext);
 	const minimumObservedAt = Math.max(0, Number(observedAfter) || 0);
-	const observationFreshnessMs = _isWorkerLifecycleThrottled(playbackContext)
-		? HW_HIDDEN_STALE_MIN_MS
-		: HW_PONG_TIMEOUT_MS;
+	const observationFreshnessMs = _getWorkerFreshnessMs(playbackContext);
 	let playbackOwner = null;
 	let playbackOwnerGeneration = 0;
 	for (const candidate of _S.workers) {

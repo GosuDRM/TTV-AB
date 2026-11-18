@@ -2638,6 +2638,29 @@ function _observeServedPrefetchTimeline(
 	}
 }
 
+const _LIVE_HANDOFF_BEHIND_MESSAGE =
+	"Live handoff playlist is behind the served broadcast time";
+const _LIVE_HANDOFF_AMBIGUOUS_TIME_MESSAGE =
+	"Live handoff requires unambiguous broadcast timestamps";
+const _LIVE_HANDOFF_PARTIAL_PLAYLIST_MESSAGE =
+	"Live handoff requires a full dated playlist";
+const _LIVE_HANDOFF_BYTE_RANGE_MESSAGE =
+	"Live handoff requires an explicit byte range";
+const _EMPTY_HOLD_RETIRED_MESSAGE = "Retired empty hold recovery playlist";
+const _EMPTY_HOLD_BACKUP_OWNERSHIP_MESSAGE =
+	"Empty hold recovery requires exact backup ownership";
+const _EMPTY_HOLD_PARTIAL_PLAYLIST_MESSAGE =
+	"Empty hold recovery requires a full playlist";
+const _PLAYLIST_CONTINUITY_REFUSAL_REASONS = {
+	[_LIVE_HANDOFF_AMBIGUOUS_TIME_MESSAGE]: "ambiguous-timestamps",
+	[_LIVE_HANDOFF_PARTIAL_PLAYLIST_MESSAGE]: "delta-playlist",
+	[_LIVE_HANDOFF_BEHIND_MESSAGE]: "behind-served-time",
+	[_LIVE_HANDOFF_BYTE_RANGE_MESSAGE]: "implicit-byte-range",
+	[_EMPTY_HOLD_RETIRED_MESSAGE]: "retired-window",
+	[_EMPTY_HOLD_BACKUP_OWNERSHIP_MESSAGE]: "backup-ownership",
+	[_EMPTY_HOLD_PARTIAL_PLAYLIST_MESSAGE]: "delta-playlist",
+};
+
 function _alignLivePlaylist(
 	info: Partial<TTVABStreamInfo>,
 	text,
@@ -2772,7 +2795,7 @@ function _alignLivePlaylist(
 	) {
 		if (minimumTime && text.includes("#EXT-X-PROGRAM-DATE-TIME:"))
 			throw new DOMException(
-				"Live handoff requires unambiguous broadcast timestamps",
+				_LIVE_HANDOFF_AMBIGUOUS_TIME_MESSAGE,
 				"AbortError",
 			);
 		return text;
@@ -2952,7 +2975,7 @@ function _alignLivePlaylist(
 	if (text.includes("#EXT-X-SKIP:")) {
 		if (minimumTime)
 			throw new DOMException(
-				"Live handoff requires a full dated playlist",
+				_LIVE_HANDOFF_PARTIAL_PLAYLIST_MESSAGE,
 				"AbortError",
 			);
 		return text;
@@ -2978,10 +3001,7 @@ function _alignLivePlaylist(
 	if (joinsAtServedEnd) retainedIndex = entries.length - 1;
 	if (diagnostic) diagnostic.joinsAtServedEnd = joinsAtServedEnd;
 	if (retainedIndex < 0)
-		throw new DOMException(
-			"Live handoff playlist is behind the served broadcast time",
-			"AbortError",
-		);
+		throw new DOMException(_LIVE_HANDOFF_BEHIND_MESSAGE, "AbortError");
 	let output = text;
 	if (retainedIndex > 0) {
 		const retained = entries[retainedIndex];
@@ -3016,10 +3036,7 @@ function _alignLivePlaylist(
 				!Number.isSafeInteger(retained.range.length) ||
 				retained.range.length <= 0
 			) {
-				throw new DOMException(
-					"Live handoff requires an explicit byte range",
-					"AbortError",
-				);
+				throw new DOMException(_LIVE_HANDOFF_BYTE_RANGE_MESSAGE, "AbortError");
 			}
 			tail[retained.range.index - retained.start] =
 				`#EXT-X-BYTERANGE:${retained.range.length}@${retained.range.offset}`;
@@ -3085,19 +3102,20 @@ function _describeTimelineJoinRefusal(
 	error,
 	diagnostic: TTVABPlaylistAlignmentDiagnostic,
 ) {
-	const reasons = {
-		"Live handoff requires unambiguous broadcast timestamps":
-			"unclear broadcast timestamps",
-		"Live handoff requires a full dated playlist": "partial playlist",
-		"Live handoff requires an explicit byte range": "unusable byte range",
-	};
-	if (
-		error?.message !==
-		"Live handoff playlist is behind the served broadcast time"
+	const reason = Object.hasOwn(
+		_PLAYLIST_CONTINUITY_REFUSAL_REASONS,
+		error?.message,
 	)
-		return Object.hasOwn(reasons, error?.message)
-			? reasons[error.message]
-			: "continuity error";
+		? _PLAYLIST_CONTINUITY_REFUSAL_REASONS[error.message]
+		: null;
+	if (reason !== "behind-served-time")
+		return reason === "ambiguous-timestamps"
+			? "unclear broadcast timestamps"
+			: reason === "delta-playlist"
+				? "partial playlist"
+				: reason === "implicit-byte-range"
+					? "unusable byte range"
+					: "continuity error";
 	const seconds = (value) => (value / 1000).toFixed(1);
 	const lead = (value) =>
 		`${value >= 0 ? "+" : "-"}${seconds(Math.abs(value))}s`;
@@ -3172,20 +3190,9 @@ function _logPlaylistContinuity(
 			while (state.requests.size > 32)
 				state.requests.delete(state.requests.keys().next().value);
 		}
-		const reasons = {
-			"Live handoff requires unambiguous broadcast timestamps":
-				"ambiguous-timestamps",
-			"Live handoff requires a full dated playlist": "delta-playlist",
-			"Live handoff playlist is behind the served broadcast time":
-				"behind-served-time",
-			"Live handoff requires an explicit byte range": "implicit-byte-range",
-			"Retired empty hold recovery playlist": "retired-window",
-			"Empty hold recovery requires exact backup ownership": "backup-ownership",
-			"Empty hold recovery requires a full playlist": "delta-playlist",
-		};
 		const reason = error
-			? Object.hasOwn(reasons, error.message)
-				? reasons[error.message]
+			? Object.hasOwn(_PLAYLIST_CONTINUITY_REFUSAL_REASONS, error.message)
+				? _PLAYLIST_CONTINUITY_REFUSAL_REASONS[error.message]
 				: "continuity-error"
 			: null;
 		const mapping = info._EmptyHoldTimelineByUrl?.get(requestKey);
@@ -3499,16 +3506,8 @@ function _getNativePlaylistReturnBlocker(
 			? null
 			: "no native media";
 	} catch (error) {
-		const catchUpMs =
-			Math.min(
-				6000,
-				Math.max(
-					2000,
-					(Number(text.match(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
-				),
-			) - 1000;
-		return error?.message ===
-			"Live handoff playlist is behind the served broadcast time"
+		const catchUpMs = _getLiveCatchUpWindowMs(text) - 1000;
+		return error?.message === _LIVE_HANDOFF_BEHIND_MESSAGE
 			? diagnostic.minimumTime - diagnostic.lastEndTime <
 				Math.min(2000, catchUpMs)
 				? null
@@ -3555,10 +3554,7 @@ function _applyPlaylistContinuity(
 			diagnostic.restartsNativeNumbering === true,
 		);
 		if (mapped == null && diagnostic.joinsAtServedEnd)
-			throw new DOMException(
-				"Live handoff playlist is behind the served broadcast time",
-				"AbortError",
-			);
+			throw new DOMException(_LIVE_HANDOFF_BEHIND_MESSAGE, "AbortError");
 		const output =
 			mapped ?? _applyBackupSpliceBridge(info, aligned, backupMetadata, url);
 		if (
@@ -3759,8 +3755,7 @@ function _applyPlaylistContinuity(
 		const holdOutput =
 			emptyHoldSource != null &&
 			error?.name === "AbortError" &&
-			error.message ===
-				"Live handoff playlist is behind the served broadcast time"
+			error.message === _LIVE_HANDOFF_BEHIND_MESSAGE
 				? _applyPlaylistContinuity(
 						info,
 						url,
@@ -4027,10 +4022,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	);
 	if (!isHold && !previous && !isOwnedNativeVariant) return null;
 	if (/#EXT-X-SKIP:/.test(text)) {
-		throw new DOMException(
-			"Empty hold recovery requires a full playlist",
-			"AbortError",
-		);
+		throw new DOMException(_EMPTY_HOLD_PARTIAL_PLAYLIST_MESSAGE, "AbortError");
 	}
 	const firstSequence = _parsePlaylistFirstMediaSequence(text) ?? 0;
 	const lines = text.split(/\r?\n/);
@@ -4095,10 +4087,7 @@ function _applyEmptyHoldPlaylistContinuity(
 				info.IsUsingBackupStream &&
 				text === info.LastCleanBackupM3U8))
 	) {
-		throw new DOMException(
-			"Empty hold recovery requires exact backup ownership",
-			"AbortError",
-		);
+		throw new DOMException(_EMPTY_HOLD_BACKUP_OWNERSHIP_MESSAGE, "AbortError");
 	}
 	const kind = isHold ? "hold" : metadata ? "backup" : "native";
 	const identity = JSON.stringify(
@@ -4290,10 +4279,7 @@ function _applyEmptyHoldPlaylistContinuity(
 				nativeAnchors[0].duration,
 	);
 	if (retainsServedEndSegment && !joinsServedEnd)
-		throw new DOMException(
-			"Live handoff playlist is behind the served broadcast time",
-			"AbortError",
-		);
+		throw new DOMException(_LIVE_HANDOFF_BEHIND_MESSAGE, "AbortError");
 	const timeline = sharedSource
 		? { ...sharedSource }
 		: changedSource
@@ -4333,10 +4319,7 @@ function _applyEmptyHoldPlaylistContinuity(
 		firstSequence < timeline.lastRawFirstSequence ||
 		!Number.isSafeInteger(lastSequence + timeline.mediaOffset)
 	) {
-		throw new DOMException(
-			"Retired empty hold recovery playlist",
-			"AbortError",
-		);
+		throw new DOMException(_EMPTY_HOLD_RETIRED_MESSAGE, "AbortError");
 	}
 	const boundaryScrolledOut =
 		timeline.addBoundary && firstSequence > timeline.boundarySequence;
@@ -5872,6 +5855,16 @@ function _getSameRequestCleanNative(
 
 const _AD_START_BACKUP_WAIT_MESSAGE = "Ad start is waiting for a live backup";
 
+function _getLiveCatchUpWindowMs(text) {
+	return Math.min(
+		6000,
+		Math.max(
+			2000,
+			(Number(text?.match?.(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
+		),
+	);
+}
+
 function _getAdStartBackupWaitDeadline(info: TTVABStreamInfo, text) {
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	if (
@@ -5895,16 +5888,7 @@ function _getAdStartBackupWaitDeadline(info: TTVABStreamInfo, text) {
 		)
 	)
 		return 0;
-	return (
-		cycleStartedAt +
-		Math.min(
-			6000,
-			Math.max(
-				2000,
-				(Number(text.match(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
-			),
-		)
-	);
+	return cycleStartedAt + _getLiveCatchUpWindowMs(text);
 }
 
 function _shouldDeferAdStartHold(
@@ -6167,13 +6151,7 @@ async function _processM3U8(
 				: _getStreamInfoForPlaylist(url)?.NativeRecoveryLoaderEpoch,
 		) || 0,
 	);
-	const waitMs = Math.min(
-		6000,
-		Math.max(
-			2000,
-			(Number(text?.match?.(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
-		),
-	);
+	const waitMs = _getLiveCatchUpWindowMs(text);
 	const startedAt = Date.now();
 	const deadlineAt = startedAt + waitMs;
 	let playlist = text;
@@ -6234,8 +6212,7 @@ async function _processM3U8(
 				const adStartDeadlineAt =
 					awaitAdStartBackup &&
 					(adStartHoldDeferred ||
-						(error?.message ===
-							"Live handoff playlist is behind the served broadcast time" &&
+						(error?.message === _LIVE_HANDOFF_BEHIND_MESSAGE &&
 							info?.IsShowingAd === true))
 						? _getAdStartBackupWaitDeadline(info, playlist)
 						: 0;
@@ -6305,8 +6282,7 @@ async function _processM3U8(
 					continue;
 				}
 				if (
-					error?.message !==
-						"Live handoff playlist is behind the served broadcast time" ||
+					error?.message !== _LIVE_HANDOFF_BEHIND_MESSAGE ||
 					refetches <= 0 ||
 					Date.now() + 1000 >= deadlineAt ||
 					requestSignal?.aborted ||
