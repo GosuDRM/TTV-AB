@@ -7234,11 +7234,20 @@ describe("crashed playback worker that keeps playing", () => {
 	it("returns the same worker to ad handling once it proves playback after the recovery reload", () => {
 		const log = vi.spyOn(g, "_log");
 		crashAndReload();
+		state().LastNativePlaybackAccessTokenPlayerType = "embed";
 		worker.messages.length = 0;
 		observe();
 		expect(posted()).toEqual(["Ping"]);
 		emitHarnessWorkerPong(worker);
 		expect(worker.__TTVABCrashed).toBe(false);
+		expect(worker.messages).toContainEqual(
+			expect.objectContaining({
+				message: {
+					key: "UpdateLastNativePlaybackAccessTokenPlayerType",
+					value: "embed",
+				},
+			}),
+		);
 		expect(tracked()).toContain(worker);
 		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
 		expect(recovery()).toMatchObject({
