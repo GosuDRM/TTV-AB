@@ -18529,4 +18529,38 @@ describe("ad break backup joining at the served end in the injected worker", () 
 			}
 		},
 	);
+
+	it.each(["hev1.1.6.L150.90.0.0.0.0.0", "av01.0.13M.08"])(
+		"logs one failure while a %s backup that starts behind the served end catches up",
+		async (codec) => {
+			const f = setupServedEndJoin(codec, 2);
+			try {
+				await f.startBreak();
+				const behind = [await f.poll(), await f.poll()];
+				expect(behind).toEqual([
+					{
+						error: "Live handoff playlist is behind the served broadcast time",
+					},
+					{
+						error: "Live handoff playlist is behind the served broadcast time",
+					},
+				]);
+				f.control.offset += 2000;
+				const joined = await f.poll();
+				expect(joined.text).toContain("#EXT-X-MEDIA-SEQUENCE:505");
+				expect(joined.text).toContain("/site/segment-505.mp4");
+				expect(joined.text).not.toMatch(/ad-segment-|__ttvab_empty_hold/);
+				expect(f.logs("[Continuity] first ad-break playlist request ")).toEqual(
+					[
+						expect.stringMatching(
+							/^\[Continuity\] first ad-break playlist request failed \(behind-served-time\) 1\.\ds into the break after 0\.\ds \(serving native\) for live:testchannel$/,
+						),
+					],
+				);
+			} finally {
+				f.harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
 });
