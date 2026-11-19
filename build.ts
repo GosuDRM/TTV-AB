@@ -210,6 +210,27 @@ function normalizeCodeSnippet(code) {
 		.trim();
 }
 
+const SHARED_STATS_HELPERS = [
+	"createChannelsMap",
+	"normalizeChannelName",
+	"normalizeChannelEntry",
+	"mergeChannelEntries",
+	"getChannelActivityAt",
+];
+
+function findStatsHelperDrift(popupSource, backgroundSource) {
+	return SHARED_STATS_HELPERS.filter((name) => {
+		const popupHelper = findDeclarationText(popupSource, name);
+		const backgroundHelper = findDeclarationText(backgroundSource, name);
+		return (
+			!popupHelper ||
+			!backgroundHelper ||
+			normalizeCodeSnippet(popupHelper) !==
+				normalizeCodeSnippet(backgroundHelper)
+		);
+	});
+}
+
 function copyFileToDist(relativePath) {
 	const sourcePath = path.join(SOURCE_ROOT, relativePath);
 	const destinationPath = path.join(DIST_DIR, relativePath);
@@ -1084,6 +1105,12 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			"Popup, background, and state counter normalizers are out of sync",
+		);
+	}
+	const statsHelperDrift = findStatsHelperDrift(popupSource, backgroundSource);
+	if (statsHelperDrift.length > 0) {
+		throw new Error(
+			`Popup and background channel statistics helpers are out of sync: ${statsHelperDrift.join(", ")}`,
 		);
 	}
 

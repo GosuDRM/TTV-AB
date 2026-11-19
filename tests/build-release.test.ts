@@ -389,6 +389,47 @@ describe("build packaging contract", () => {
 	});
 });
 
+describe("shared channel statistics helpers", () => {
+	const compiled = (path: string) =>
+		readFileSync(resolve(__dirname, `../dist/src/${path}`), "utf8");
+	const drift = (popup: string, background: string) =>
+		(
+			loadBuildContext(temporaryRoot("stats-helpers")).findStatsHelperDrift as (
+				a: string,
+				b: string,
+			) => string[]
+		)(popup, background);
+
+	it("finds no drift between the shipped popup and background", () => {
+		expect(
+			drift(compiled("popup/popup.js"), compiled("scripts/background.js")),
+		).toEqual([]);
+	});
+
+	it.each([
+		[
+			"changed",
+			(source: string) =>
+				source.replace("target.ads + incoming.ads", "target.ads"),
+		],
+		[
+			"missing",
+			(source: string) =>
+				source.replace(
+					"function mergeChannelEntries",
+					"function mergeChannelEntriesRenamed",
+				),
+		],
+	])("reports a %s popup copy by name", (_label, change) => {
+		const popup = compiled("popup/popup.js");
+		const changed = change(popup);
+		expect(changed).not.toBe(popup);
+		expect(drift(changed, compiled("scripts/background.js"))).toEqual([
+			"mergeChannelEntries",
+		]);
+	});
+});
+
 it("rejects core module type errors through the standalone typecheck command", () => {
 	const root = temporaryRoot("typecheck");
 	const packageJson = JSON.parse(
