@@ -2196,8 +2196,6 @@ function _hookWorkerFetch() {
 					requestPlayerType === "picture-by-picture" &&
 					playbackContext.MediaType === "live" &&
 					__TTVAB_STATE__.IsAdStrippingEnabled === true &&
-					typeof info?.EncodingsM3U8 === "string" &&
-					info.EncodingsM3U8 &&
 					encodings.includes("#EXT-X-STREAM-INF")
 				) {
 					const qualityCount = rememberPictureByPicturePlaylists(

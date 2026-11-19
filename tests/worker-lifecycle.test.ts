@@ -18564,3 +18564,126 @@ describe("ad break backup joining at the served end in the injected worker", () 
 		},
 	);
 });
+
+describe("picture-by-picture master racing the main master", () => {
+	it.each([false, true])(
+		"keeps the full main catalog when the picture-by-picture master answers first (ads before the main master: %s)",
+		async (adsBeforeMainMaster) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(200000);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const base = "https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+			const mainUrl = `${base}?sig=main&token=${encodeURIComponent(JSON.stringify({ player_type: "site" }))}`;
+			const pictureByPictureUrl = `${base}?sig=pbp&token=${encodeURIComponent(JSON.stringify({ player_type: "picture-by-picture" }))}`;
+			const variants = (source: string, codec: string, heights: number[]) =>
+				`#EXTM3U\n${heights
+					.map(
+						(height) =>
+							`#EXT-X-STREAM-INF:RESOLUTION=${(height * 16) / 9}x${height},VIDEO="${height}p",CODECS="mp4a.40.2,${codec}"\nhttps://edge.example/${source}/${height}.m3u8`,
+					)
+					.join("\n")}`;
+			const mainMaster = variants("main", "avc1.64002a", [1080, 720, 360, 160]);
+			const pictureByPictureMaster = variants("pbp", "avc1.4d401f", [360, 160]);
+			const media = (source: string, height: number, ads: boolean) =>
+				`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n${ads ? '#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad"\n#EXTINF:2,Amazon\n' : "#EXTINF:2,live\n"}https://edge.example/${source}/${height}-${ads ? "ad" : "live"}.ts`;
+			let pictureByPictureAds = false;
+			const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url === mainUrl) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					return new Response(mainMaster);
+				}
+				if (url === pictureByPictureUrl)
+					return new Response(pictureByPictureMaster);
+				const match = url.match(/edge\.example\/(main|pbp)\/(\d+)\.m3u8$/);
+				if (match)
+					return new Response(
+						media(
+							match[1],
+							Number(match[2]),
+							match[1] === "pbp" && pictureByPictureAds,
+						),
+					);
+				return new Response("unavailable", { status: 503 });
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+				runtime.scope.Date = Date;
+				runtime.deliverBootstrap();
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				state.PreferredQualityGroup = "720p60";
+				state.PageMediaKey = "live:testchannel";
+				const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+				const settle = (request: Promise<Response>) =>
+					request.then(
+						(response) => response.text(),
+						(error) => `failed:${error?.name}`,
+					);
+				const mainResponse = settle(workerFetch(mainUrl));
+				const pictureByPictureResponse = settle(
+					workerFetch(pictureByPictureUrl),
+				);
+				await vi.advanceTimersByTimeAsync(10);
+				expect(await pictureByPictureResponse).toBe(pictureByPictureMaster);
+				if (adsBeforeMainMaster) {
+					pictureByPictureAds = true;
+					const adMarked = settle(
+						workerFetch("https://edge.example/pbp/360.m3u8"),
+					);
+					await vi.advanceTimersByTimeAsync(10);
+					expect(await adMarked).not.toContain("360-ad.ts");
+					pictureByPictureAds = false;
+				}
+				await vi.advanceTimersByTimeAsync(1000);
+				expect(await mainResponse).toBe(mainMaster);
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
+				const heights = (list: unknown) =>
+					(list as { Resolution: string }[]).map(
+						(entry) => entry.Resolution.split("x")[1],
+					);
+				expect(info.UsherBaseUrl).toBe(mainUrl);
+				expect(heights(info.ResolutionList)).toEqual([
+					"1080",
+					"720",
+					"360",
+					"160",
+				]);
+				expect(
+					heights(
+						(info._NativePlaybackMaster as Record<string, unknown>)
+							.resolutionList,
+					),
+				).toEqual(["1080", "720", "360", "160"]);
+				expect(
+					await settle(workerFetch("https://edge.example/pbp/360.m3u8")),
+				).toBe(media("pbp", 360, false));
+				expect(
+					await settle(workerFetch("https://edge.example/main/720.m3u8")),
+				).toContain("720-live.ts");
+				expect(
+					(info.SustainedNativeResolution as Record<string, string>).Resolution,
+				).toBe("1280x720");
+				const logs = (
+					runtime.scope.postMessage as ReturnType<typeof vi.fn>
+				).mock.calls
+					.map(([value]) => value?.message)
+					.filter((message) => message?.key === "LogEntry")
+					.map((message) => message.value.m);
+				expect(logs).toContain(
+					"[Trace] Picture-by-picture player keeps its own stream (2 qualities); main player catalog unchanged",
+				);
+				expect(
+					logs.filter((message) => message.startsWith("Stream initialized")),
+				).toEqual(["Stream initialized: testchannel"]);
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+});
