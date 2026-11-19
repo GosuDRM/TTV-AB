@@ -1622,8 +1622,6 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		_AdRecoveryConsecutiveFailures: 0,
 		DisableAdSpoofing: false,
 		DisableAutoplayBackup: false,
-		LoggedAdSpoofNoMatch: false,
-		LoggedAdSpoofNoToken: false,
 		AdSpoofFailureCount: 0,
 		LastAdSpoofFailureLogAt: 0,
 	};
