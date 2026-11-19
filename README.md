@@ -74,6 +74,16 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v27.0.1 - 2026-11-19
+
+- **Ad Break Checks After a Player Error** - Give Twitch's player the stream access type it missed when it keeps playing after an internal error, so its checks for the end of an ad break match the stream instead of using an older or default type.
+- **HD Replacement Diagnostics** - Say in debug logs that an ad-free HD replacement stream could not join through a low-latency segment, instead of saying it listed none when it did.
+- **Low Quality After Some Ad Breaks** - Keep all of the stream's qualities when Twitch's small picture-by-picture player next to an ad loads before the main player, instead of restoring the stream after the break with only 360p and 160p available, which left it at 360p.
+- **Failed Stream Requests During Ad Breaks** - Keep the player on the ad-free replacement stream when it asks for an update before the replacement has a new segment, instead of failing that request.
+- **Ad Break Diagnostics** - Record in debug logs the first stream request that fails or is cancelled during each ad break, and how many of Twitch's ad-marked playlists and rejected HD replacement streams contained actual ad segments, to help track down breaks that stay at low quality.
+- **Consistent Stream Switching Rules** - Keep each timing rule for switching between Twitch's stream and the ad-free replacement stream in one place, so a future update cannot change one use of it and miss another. Playback is unchanged.
+- **Consistent Channel Statistics** - Check during every build that the popup and the extension count channel statistics the same way, so a future update cannot make the popup's channel list disagree with saved statistics.
+
 ### v27.0.0 - 2026-11-19
 
 - **Audio Delay After Ad Breaks on HEVC and AV1 Streams** - Return to the stream without pausing and resuming the player when the ad-free replacement uses the same HEVC or AV1 video format and quality as the stream, instead of restarting playback at the end of the break, which could leave the audio playing behind the video. ([#101](https://github.com/GosuDRM/TTV-AB/issues/101))
@@ -85,12 +95,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Brief Restart When Ad Breaks End** - Return to the stream without pausing and resuming the player when the ad-free replacement already matches the stream's quality, instead of a short restart at the end of every break with Low Quality Fallback off.
 - **Picture-by-Picture Player During Ads** - Leave Twitch's small picture-by-picture player on its own stream, so it no longer loads a second 1080p stream or disrupts the main player's ad-free replacement.
 - **Freeze at a Missing Segment** - Skip a hole of up to two and a half seconds in the buffered video after about a second of frozen video outside ad breaks, instead of staying frozen for several seconds.
-
-### v26.0.2 - 2026-11-04
-
-- **Freeze at the Start of Some Ad Breaks** - Switch to the ad-free replacement stream as soon as it is found when it starts slightly behind the stream, skipping ahead up to about a second and a half instead of freezing for several seconds while waiting for it to catch up.
-- **Shorter Replays When Switching Streams** - Repeat at most half a second of already watched video when switching to or from the ad-free replacement stream, instead of up to a second.
-- **Freeze at Small Gaps During Ad Breaks** - Skip a gap of up to a second in the buffered video after about a second of frozen video during an ad break, instead of staying frozen for about 3 seconds.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

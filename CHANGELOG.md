@@ -2,6 +2,24 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [27.0.1] - 2026-11-19
+
+Fixed
+
+- **Ad Break Checks After a Player Error** - Give Twitch's player the stream access type it missed when it keeps playing after an internal error, so its checks for the end of an ad break match the stream instead of using an older or default type.
+- **HD Replacement Diagnostics** - Say in debug logs that an ad-free HD replacement stream could not join through a low-latency segment, instead of saying it listed none when it did.
+- **Low Quality After Some Ad Breaks** - Keep all of the stream's qualities when Twitch's small picture-by-picture player next to an ad loads before the main player, instead of restoring the stream after the break with only 360p and 160p available, which left it at 360p.
+- **Failed Stream Requests During Ad Breaks** - Keep the player on the ad-free replacement stream when it asks for an update before the replacement has a new segment, instead of failing that request.
+
+Added
+
+- **Ad Break Diagnostics** - Record in debug logs the first stream request that fails or is cancelled during each ad break, and how many of Twitch's ad-marked playlists and rejected HD replacement streams contained actual ad segments, to help track down breaks that stay at low quality.
+
+Changed
+
+- **Consistent Stream Switching Rules** - Keep each timing rule for switching between Twitch's stream and the ad-free replacement stream in one place, so a future update cannot change one use of it and miss another. Playback is unchanged.
+- **Consistent Channel Statistics** - Check during every build that the popup and the extension count channel statistics the same way, so a future update cannot make the popup's channel list disagree with saved statistics.
+
 ## [27.0.0] - 2026-11-19
 
 Fixed
