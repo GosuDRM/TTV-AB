@@ -3774,6 +3774,10 @@ function _syncRevivedWorkerState(worker) {
 		["UpdateClientVersion", __TTVAB_STATE__.ClientVersion],
 		["UpdateClientSession", __TTVAB_STATE__.ClientSession],
 		["UpdateGQLHash", __TTVAB_STATE__.PlaybackAccessTokenHash],
+		[
+			"UpdateLastNativePlaybackAccessTokenPlayerType",
+			__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType,
+		],
 	] as const) {
 		if (typeof value === "string" && value) messages.push({ key, value });
 	}
