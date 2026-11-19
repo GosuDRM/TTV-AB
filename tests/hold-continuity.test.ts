@@ -1212,6 +1212,47 @@ describe("empty hold playlist continuity", () => {
 			expect(info._LivePlaylistTimeline).toBe(advancedTimeline);
 		});
 
+		it("logs the first failed and the first cancelled playlist request of each ad break once", async () => {
+			const { context, info, serve, fetch } = setup();
+			context._log = vi.fn();
+			const failures = () =>
+				vi
+					.mocked(context._log)
+					.mock.calls.map(([message]) => String(message))
+					.filter((message) =>
+						message.startsWith("[Continuity] first ad-break playlist request "),
+					);
+			await serve(dated(100, "native") + prefetch("native", 103));
+			await serve(dated(101, "a") + prefetch("a", 104), "site");
+			for (let attempt = 0; attempt < 2; attempt++)
+				await expect(serve(dated(99, "b"), "embed", "two")).rejects.toThrow(
+					"Live handoff playlist is behind the served broadcast time",
+				);
+			expect(failures()).toEqual([
+				expect.stringMatching(
+					/^\[Continuity\] first ad-break playlist request failed \(behind-served-time\) 1\.\ds into the break after 0\.\ds \(serving backup\) for live:testchannel$/,
+				),
+			]);
+			info.VisibleAdStartedAt = Date.now() - 500;
+			const controller = new AbortController();
+			controller.abort();
+			for (let attempt = 0; attempt < 2; attempt++)
+				await expect(
+					context._processM3U8(
+						nativeUrl,
+						playlist(400),
+						fetch,
+						controller.signal,
+					),
+				).rejects.toMatchObject({ name: "AbortError" });
+			expect(failures()).toEqual([
+				expect.anything(),
+				expect.stringMatching(
+					/^\[Continuity\] first ad-break playlist request cancelled by the player 0\.\ds into the break after 0\.\ds \(serving backup\) for live:testchannel$/,
+				),
+			]);
+		});
+
 		it("skips to the next segment instead of replaying more than half a second", async () => {
 			const { context, serve } = setup();
 			context._log = vi.fn();
@@ -2675,11 +2716,14 @@ describe("empty hold playlist continuity", () => {
 		await expect(serve(dated(100, 26), "site")).rejects.toThrow(
 			"Retired empty hold",
 		);
-		expect(log).toHaveBeenCalledTimes(1);
+		expect(log).toHaveBeenCalledTimes(2);
 		expect(log.mock.calls[0][0]).toMatch(/^\[Continuity\] rejected /);
 		expect(
 			JSON.parse(log.mock.calls[0][0].split("rejected ")[1]),
 		).toMatchObject({ reason: "retired-window", servedSequence: null });
+		expect(log.mock.calls[1][0]).toMatch(
+			/^\[Continuity\] first ad-break playlist request failed \(retired-window\) /,
+		);
 	});
 
 	it.each([234, -234])(
@@ -4249,7 +4293,14 @@ describe("empty hold playlist continuity", () => {
 			context._processM3U8(nativeUrl, playlist(10), vi.fn(), controller.signal),
 		).rejects.toMatchObject({ name: "AbortError" });
 		expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
-		expect(log).not.toHaveBeenCalled();
+		expect(log.mock.calls).toEqual([
+			[
+				expect.stringMatching(
+					/^\[Continuity\] first ad-break playlist request cancelled by the player /,
+				),
+				"warning",
+			],
+		]);
 	});
 
 	it("keeps the degraded page fetch advancing from an owned AVC hold to native", async () => {

@@ -6336,8 +6336,48 @@ async function _processM3U8(
 		}
 	} catch (error) {
 		logAdStartWait(true);
+		if (!adStartWaitStartedAt)
+			_logFirstBreakRequestFailure(
+				_getStreamInfoForPlaylist(url),
+				error,
+				requestSignal,
+				startedAt,
+			);
 		throw error;
 	}
+}
+
+const _BreakRequestFailureLogs = new WeakMap<object, number>();
+
+function _logFirstBreakRequestFailure(
+	info: TTVABStreamInfo | null,
+	error,
+	requestSignal,
+	startedAt,
+) {
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	if (
+		error?.name !== "AbortError" ||
+		info?.MediaType !== "live" ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		cycleStartedAt <= 0 ||
+		!(info.IsShowingAd || info.IsHoldingBackupAfterAd) ||
+		_BreakRequestFailureLogs.get(info) === cycleStartedAt
+	)
+		return;
+	_BreakRequestFailureLogs.set(info, cycleStartedAt);
+	const now = Date.now();
+	const outcome = requestSignal?.aborted
+		? "cancelled by the player"
+		: `failed (${
+				Object.hasOwn(_PLAYLIST_CONTINUITY_REFUSAL_REASONS, error.message)
+					? _PLAYLIST_CONTINUITY_REFUSAL_REASONS[error.message]
+					: error.message
+			})`;
+	_log(
+		`[Continuity] first ad-break playlist request ${outcome} ${((now - cycleStartedAt) / 1000).toFixed(1)}s into the break after ${((now - startedAt) / 1000).toFixed(1)}s (serving ${info._LastServedPlaylistKind || "nothing yet"}) for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}`,
+		"warning",
+	);
 }
 
 async function _processM3U8Attempt(
