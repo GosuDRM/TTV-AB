@@ -3126,7 +3126,7 @@ function _describeTimelineJoinRefusal(
 		Number.isFinite(diagnostic.servedEdgeMs)
 			? `; clock lead: this source ${lead(diagnostic.candidateEdgeMs)}, served source ${lead(diagnostic.servedEdgeMs)}`
 			: "";
-	return `${lag > 0 ? `newest segment ends ${seconds(lag)}s before the served end` : `newest segment would repeat ${seconds(replay)}s of served video and lists no low-latency segment to join`}${clockLead}`;
+	return `${lag > 0 ? `newest segment ends ${seconds(lag)}s before the served end` : `newest segment would repeat ${seconds(replay)}s of served video and cannot join through a low-latency segment`}${clockLead}`;
 }
 
 function _logPlaylistContinuity(

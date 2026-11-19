@@ -1064,7 +1064,7 @@ describe("HD backup probation through playlist polling", () => {
 				candidateEdgeMs: -300,
 				servedEdgeMs: Number.NaN,
 			},
-			"newest segment would repeat 1.0s of served video and lists no low-latency segment to join",
+			"newest segment would repeat 1.0s of served video and cannot join through a low-latency segment",
 		],
 		[
 			"Live handoff requires unambiguous broadcast timestamps",
@@ -1146,7 +1146,7 @@ describe("HD backup probation through playlist polling", () => {
 			turns.map(({ behind }) =>
 				expect.stringMatching(
 					new RegExp(
-						`^\\[Trace\\] ${behind} playlist cannot join the served timeline yet \\(newest segment would repeat 2\\.0s of served video and lists no low-latency segment to join(; clock lead: this source [+-]\\d+\\.\\ds, served source [+-]\\d+\\.\\ds)?\\); retaining clean autoplay bridge$`,
+						`^\\[Trace\\] ${behind} playlist cannot join the served timeline yet \\(newest segment would repeat 2\\.0s of served video and cannot join through a low-latency segment(; clock lead: this source [+-]\\d+\\.\\ds, served source [+-]\\d+\\.\\ds)?\\); retaining clean autoplay bridge$`,
 					),
 				),
 			),
