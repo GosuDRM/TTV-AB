@@ -1156,6 +1156,62 @@ describe("empty hold playlist continuity", () => {
 			expect(info._LivePlaylistTimeline).toBe(timeline);
 		});
 
+		it.each([
+			["level with", 100, 0, "a-102", "a-103"],
+			["crossing", 101, -1235, "a-103", "a-104"],
+		])(
+			"re-serves the segment of a backup that joined %s the served end until it lists a new one",
+			async (_join, first, shiftMs, joinedSegment, nextSegment) => {
+				const { info, serve } = setup();
+				await serve(dated(100, "native") + prefetch("native", 103));
+				const joining =
+					dated(first, "a", first, shiftMs) + prefetch("a", first + 3);
+				const joined = await serve(joining, "site");
+				expect(segments(joined)[0].url).toContain(`${joinedSegment}.ts`);
+				const timeline = structuredClone(info._LivePlaylistTimeline);
+				expect(await serve(joining, "site")).toBe(joined);
+				expect(info._LivePlaylistTimeline).toEqual(timeline);
+				const advanced = await serve(
+					dated(first + 1, "a", first + 1, shiftMs) + prefetch("a", first + 4),
+					"site",
+				);
+				expect(advanced).not.toContain(`${joinedSegment}.ts`);
+				expect(segments(advanced)[0].url).toContain(`${nextSegment}.ts`);
+				expect(numberOf(advanced, nextSegment)).toBe(
+					numberOf(joined, nextSegment),
+				);
+			},
+		);
+
+		it("still refuses a joined backup refresh that drops its prefetch or rewinds before the served end", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native") + prefetch("native", 103));
+			const joining = dated(100, "a") + prefetch("a", 103);
+			await serve(joining, "site");
+			const joinedTimeline = info._LivePlaylistTimeline;
+			await expect(serve(dated(100, "a"), "site")).rejects.toThrow(
+				"Live handoff playlist is behind the served broadcast time",
+			);
+			expect(info._LivePlaylistTimeline).toBe(joinedTimeline);
+			await serve(dated(101, "a") + prefetch("a", 104), "site");
+			const advancedTimeline = info._LivePlaylistTimeline;
+			context._rememberBackupPlaylistMetadata(info, joining, "avc", codec, {
+				playerType: "site",
+				resolution: "1920x1080",
+				playlistUrl: "https://edge.example/site.m3u8?session=one",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+			});
+			expect(() =>
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					joining,
+					info.BackupPlaylistMetadata.get(joining),
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(info._LivePlaylistTimeline).toBe(advancedTimeline);
+		});
+
 		it("skips to the next segment instead of replaying more than half a second", async () => {
 			const { context, serve } = setup();
 			context._log = vi.fn();

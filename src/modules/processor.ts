@@ -2989,16 +2989,25 @@ function _alignLivePlaylist(
 				(minimumTime - entry.time <= handoffReplayLimitMs &&
 					minimumTime - entry.time < entry.end - minimumTime)),
 	);
+	const listsPrefetch = lines
+		.slice(blockStart)
+		.some((line) => line.startsWith("#EXT-X-TWITCH-PREFETCH:"));
 	const joinsAtServedEnd = Boolean(
 		retainedIndex < 0 &&
 			Number.isSafeInteger(minimumSequence) &&
 			(backupMetadata || previous?.backup) &&
 			entries.at(-1).end >= minimumTime - handoffToleranceMs &&
-			lines
-				.slice(blockStart)
-				.some((line) => line.startsWith("#EXT-X-TWITCH-PREFETCH:")),
+			listsPrefetch,
 	);
-	if (joinsAtServedEnd) retainedIndex = entries.length - 1;
+	const repeatsServedEnd = Boolean(
+		retainedIndex < 0 &&
+			!changedSource &&
+			backupMetadata &&
+			Number.isSafeInteger(previous.lastEndSequence) &&
+			Math.abs(entries.at(-1).end - previousEndTime) <= handoffToleranceMs &&
+			listsPrefetch,
+	);
+	if (joinsAtServedEnd || repeatsServedEnd) retainedIndex = entries.length - 1;
 	if (diagnostic) diagnostic.joinsAtServedEnd = joinsAtServedEnd;
 	if (retainedIndex < 0)
 		throw new DOMException(_LIVE_HANDOFF_BEHIND_MESSAGE, "AbortError");
@@ -3064,9 +3073,10 @@ function _alignLivePlaylist(
 	}
 	if (!commitTimeline) return output;
 	if (diagnostic) {
-		diagnostic.retainedTime = joinsAtServedEnd
-			? entries[retainedIndex].end
-			: entries[retainedIndex].time;
+		diagnostic.retainedTime =
+			joinsAtServedEnd || repeatsServedEnd
+				? entries[retainedIndex].end
+				: entries[retainedIndex].time;
 		diagnostic.skippedSegments = retainedIndex;
 		diagnostic.retainedSegments = entries.length - retainedIndex;
 		diagnostic.internalGapMs = 0;

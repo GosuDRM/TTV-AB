@@ -18379,3 +18379,154 @@ describe("worker command broadcast", () => {
 		}
 	});
 });
+
+describe("ad break backup joining at the served end in the injected worker", () => {
+	function setupServedEndJoin(codec: string, lagSegments: number) {
+		const start = Date.parse("2026-10-06T00:05:30Z");
+		vi.useFakeTimers();
+		vi.setSystemTime(start + 9000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const nativeUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const control = { offset: 0, adFrom: Number.POSITIVE_INFINITY };
+		const master = (type: string) =>
+			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=2560x1440,VIDEO="chunked",CODECS="${codec},mp4a.40.2"\n${type === "native" ? nativeUrl : `https://edge.example/${type}/index.m3u8`}`;
+		const media = (type: string) => {
+			const newest =
+				503 + control.offset / 2000 - (type === "native" ? 0 : lagSegments);
+			const lines = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				`#EXT-X-MEDIA-SEQUENCE:${newest - 3}`,
+				`#EXT-X-MAP:URI="https://edge.example/${type}/init.mp4"`,
+			];
+			const isAd = (sequence: number) =>
+				type === "native" && sequence >= control.adFrom;
+			for (let sequence = newest - 3; sequence <= newest; sequence++) {
+				if (isAd(sequence))
+					lines.push(
+						`#EXT-X-DATERANGE:ID="stitched-ad-${control.adFrom}",CLASS="twitch-stitched-ad",START-DATE="${new Date(start + (control.adFrom - 500) * 2000).toISOString()}",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"`,
+					);
+				lines.push(
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (sequence - 500) * 2000).toISOString()}`,
+					`#EXTINF:2.000,${isAd(sequence) ? "stitched-ad" : "live"}`,
+					`https://edge.example/${type}/${isAd(sequence) ? "ad-" : ""}segment-${sequence}.mp4`,
+				);
+			}
+			for (let sequence = newest + 1; sequence <= newest + 2; sequence++)
+				lines.push(
+					`#EXT-X-TWITCH-PREFETCH:https://edge.example/${type}/${isAd(sequence) ? "ad-" : ""}segment-${sequence}.mp4`,
+				);
+			return lines.join("\n");
+		};
+		const fetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = new URL(String(input));
+				if (url.hostname === "gql.twitch.tv") {
+					await new Promise((resolve) => setTimeout(resolve, 150));
+					const type = JSON.parse(String(options?.body)).variables.playerType;
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: { signature: "test", value: type },
+						},
+					});
+				}
+				if (url.hostname === "usher.ttvnw.net") {
+					const token = url.searchParams.get("token");
+					if (token) await new Promise((resolve) => setTimeout(resolve, 150));
+					return new Response(master(token || "native"));
+				}
+				if (url.href === nativeUrl) return new Response(media("native"));
+				await new Promise((resolve) => setTimeout(resolve, 150));
+				return new Response(media("site"));
+			},
+		);
+		const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+		runtime.scope.Date = Date;
+		runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+		runtime.deliverBootstrap();
+		const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			PreferredQualityGroup: "chunked",
+			DisableAutoplayBackup: true,
+			DisableAdSpoofing: true,
+		});
+		const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+		const messages = () =>
+			(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+				([value]) => value.message,
+			);
+		const logs = (prefix: string) =>
+			messages()
+				.filter((message) => message?.key === "LogEntry")
+				.map((message) => message.value.m)
+				.filter((message) => message.startsWith(prefix));
+		const poll = async () => {
+			let result: { text?: string; error?: string } | null = null;
+			void workerFetch(nativeUrl).then(
+				async (response) => {
+					result = { text: await response.text() };
+				},
+				(error) => {
+					result = { error: String(error?.message ?? error) };
+				},
+			);
+			for (let step = 0; step < 120 && !result; step++)
+				await vi.advanceTimersByTimeAsync(50);
+			vi.setSystemTime(Date.now() + 1000);
+			return result as unknown as { text?: string; error?: string };
+		};
+		const startBreak = async () => {
+			await workerFetch(masterUrl);
+			for (let index = 0; index < 3; index++) {
+				expect((await poll()).text).toContain("/native/segment-");
+				vi.setSystemTime(start + 9000 + (index + 1) * 2000);
+				control.offset += 2000;
+			}
+			control.adFrom = 503 + control.offset / 2000;
+			expect((await poll()).text).not.toContain("/ad-segment-");
+		};
+		return { harness, control, messages, logs, poll, startBreak };
+	}
+
+	it.each(["hev1.1.6.L150.90.0.0.0.0.0", "av01.0.13M.08", "avc1.64002a"])(
+		"repeats the joined %s backup segment until the backup lists a new one",
+		async (codec) => {
+			const f = setupServedEndJoin(codec, 1);
+			try {
+				await f.startBreak();
+				const joined = await f.poll();
+				expect(joined.text).toContain("#EXT-X-MEDIA-SEQUENCE:505");
+				expect(joined.text).toContain("/site/segment-505.mp4");
+				expect(joined.text).toContain(
+					"#EXT-X-TWITCH-PREFETCH:https://edge.example/site/segment-507.mp4",
+				);
+				expect(await f.poll()).toEqual(joined);
+				f.control.offset += 2000;
+				const advanced = await f.poll();
+				expect(advanced.text).toContain("#EXT-X-MEDIA-SEQUENCE:506");
+				expect(advanced.text).not.toContain("/site/segment-505.mp4");
+				expect(advanced.text).toContain("/site/segment-506.mp4");
+				expect(advanced.text).not.toMatch(/ad-segment-|__ttvab_empty_hold/);
+				expect(f.logs("[Continuity] first ad-break playlist request ")).toEqual(
+					[],
+				);
+				expect(
+					f
+						.messages()
+						.filter(
+							(message) =>
+								message?.key === "ReloadPlayer" ||
+								message?.key === "PauseResumePlayer",
+						),
+				).toEqual([]);
+			} finally {
+				f.harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+});
