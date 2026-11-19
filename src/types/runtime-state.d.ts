@@ -118,8 +118,6 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	PendingFetchRequests: Map<string, TTVABPendingFetchRequest>;
 	FetchRequestSeq: number;
 	_AdRecoveryConsecutiveFailures: number;
-	LoggedAdSpoofNoMatch: boolean;
-	LoggedAdSpoofNoToken: boolean;
 	AdSpoofFailureCount: number;
 	LastAdSpoofFailureLogAt: number;
 	RequestMediaBootstrapRecovery?: (
