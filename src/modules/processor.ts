@@ -3422,6 +3422,64 @@ function _logAdBreakSummary(
 		`[Break] ${outcome} ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}${timeline.rollType ? ` (${timeline.rollType})` : ""}: ${path || "no media served"}${timeline.dropped > 0 ? ` (${timeline.dropped} earlier steps omitted)` : ""}${timeline.nativeReturn ? `; native return by ${timeline.nativeReturn}` : ""}; ${measuredSummary}`,
 		"info",
 	);
+	const evidence = _AdSegmentEvidence.get(info);
+	if (evidence?.cycleStartedAt !== timeline.cycleStartedAt) return;
+	_AdSegmentEvidence.delete(info);
+	_log(
+		`[Break] ad segments ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}: Twitch's stream had them in ${evidence.nativeWithAdSegments} of ${evidence.markedNative} ad-marked playlists, rejected HD replacements in ${evidence.backupsWithAdSegments} of ${evidence.rejectedBackups}${evidence.markersOnlyStart ? "; the break began with ad markers only" : ""}`,
+		"info",
+	);
+}
+
+const _AdSegmentEvidence = new WeakMap<
+	object,
+	{
+		cycleStartedAt: number;
+		markersOnlyStart: boolean;
+		markedNative: number;
+		nativeWithAdSegments: number;
+		rejectedBackups: number;
+		backupsWithAdSegments: number;
+	}
+>();
+
+function _noteAdSegmentEvidence(
+	info: Partial<TTVABStreamInfo>,
+	text,
+	rejectedBackup = false,
+) {
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	if (
+		info?.MediaType !== "live" ||
+		cycleStartedAt <= 0 ||
+		typeof text !== "string"
+	)
+		return;
+	let evidence = _AdSegmentEvidence.get(info);
+	if (evidence?.cycleStartedAt !== cycleStartedAt) {
+		evidence = {
+			cycleStartedAt,
+			markersOnlyStart: false,
+			markedNative: 0,
+			nativeWithAdSegments: 0,
+			rejectedBackups: 0,
+			backupsWithAdSegments: 0,
+		};
+		_AdSegmentEvidence.set(info, evidence);
+	}
+	if (info.CsaiOnlyThisBreak) evidence.markersOnlyStart = true;
+	const hasAdSegments =
+		text
+			.split(/\r?\n/)
+			.some((line) => line.startsWith("#EXTINF") && !line.includes(",live")) ||
+		_playlistHasKnownAdSegments(text, { includeCached: false });
+	if (rejectedBackup) {
+		evidence.rejectedBackups++;
+		if (hasAdSegments) evidence.backupsWithAdSegments++;
+	} else {
+		evidence.markedNative++;
+		if (hasAdSegments) evidence.nativeWithAdSegments++;
+	}
 }
 
 function _getNativePlaylistReturnBlocker(
@@ -7331,6 +7389,7 @@ async function _processM3U8Core(
 		_hasExplicitAdMetadata(text) ||
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
+	if (hasAds && !isBackupUrl) _noteAdSegmentEvidence(info, text);
 	const sustainedNativeCodec = info.SustainedNativeResolution?.Codecs;
 	const previousSustainedNativeCodec =
 		previousSustainedNativeResolution?.Codecs;
@@ -11084,6 +11143,8 @@ async function _searchBackupStream(
 											info.LoggedBackupAdsByType = new Set();
 										}
 										info.LoggedBackupAdsByType.add(pt);
+										if (pt !== "autoplay")
+											_noteAdSegmentEvidence(info, m3u8, true);
 									}
 									const canRetryWithoutViewerHeaders = Boolean(
 										isFreshM3u8 &&

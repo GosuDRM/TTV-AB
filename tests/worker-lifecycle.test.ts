@@ -18381,7 +18381,11 @@ describe("worker command broadcast", () => {
 });
 
 describe("ad break backup joining at the served end in the injected worker", () => {
-	function setupServedEndJoin(codec: string, lagSegments: number) {
+	function setupServedEndJoin(
+		codec: string,
+		lagSegments: number,
+		options: { markersOnly?: boolean; backupAdMarked?: boolean } = {},
+	) {
 		const start = Date.parse("2026-10-06T00:05:30Z");
 		vi.useFakeTimers();
 		vi.setSystemTime(start + 9000);
@@ -18402,10 +18406,13 @@ describe("ad break backup joining at the served end in the injected worker", () 
 				`#EXT-X-MEDIA-SEQUENCE:${newest - 3}`,
 				`#EXT-X-MAP:URI="https://edge.example/${type}/init.mp4"`,
 			];
+			const isMarked = (sequence: number) =>
+				sequence >= control.adFrom &&
+				(type === "native" || options.backupAdMarked === true);
 			const isAd = (sequence: number) =>
-				type === "native" && sequence >= control.adFrom;
+				type === "native" && !options.markersOnly && isMarked(sequence);
 			for (let sequence = newest - 3; sequence <= newest; sequence++) {
-				if (isAd(sequence))
+				if (isMarked(sequence))
 					lines.push(
 						`#EXT-X-DATERANGE:ID="stitched-ad-${control.adFrom}",CLASS="twitch-stitched-ad",START-DATE="${new Date(start + (control.adFrom - 500) * 2000).toISOString()}",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"`,
 					);
@@ -18489,7 +18496,16 @@ describe("ad break backup joining at the served end in the injected worker", () 
 			control.adFrom = 503 + control.offset / 2000;
 			expect((await poll()).text).not.toContain("/ad-segment-");
 		};
-		return { harness, control, messages, logs, poll, startBreak };
+		return {
+			harness,
+			control,
+			state,
+			runtime,
+			messages,
+			logs,
+			poll,
+			startBreak,
+		};
 	}
 
 	it.each(["hev1.1.6.L150.90.0.0.0.0.0", "av01.0.13M.08", "avc1.64002a"])(
@@ -18523,6 +18539,54 @@ describe("ad break backup joining at the served end in the injected worker", () 
 								message?.key === "PauseResumePlayer",
 						),
 				).toEqual([]);
+			} finally {
+				f.harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+
+	it.each([
+		[true, "0 of [1-9]\\d*", "; the break began with ad markers only"],
+		[false, "([1-9]\\d*) of \\1", ""],
+	])(
+		"counts ad segments in ad-marked native playlists and rejected HD replacements (markers only=%s)",
+		async (markersOnly, nativeCounts, suffix) => {
+			const f = setupServedEndJoin("avc1.64002a", 0, {
+				markersOnly,
+				backupAdMarked: true,
+			});
+			try {
+				await f.startBreak();
+				for (let index = 0; index < 4; index++) {
+					await f.poll();
+					f.control.offset += 2000;
+				}
+				const info = (
+					f.state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
+				const cycleStartedAt = info.VisibleAdStartedAt;
+				f.control.adFrom = Number.POSITIVE_INFINITY;
+				for (
+					let index = 0;
+					index < 120 && !f.logs("[Break] ended ").length;
+					index++
+				) {
+					await f.poll();
+					if (index % 2 === 1) f.control.offset += 2000;
+				}
+				expect(f.logs("[Break] ended ")).toHaveLength(1);
+				const rejected = f
+					.logs("[Trace] Rejected ")
+					.filter((message) => !message.includes("autoplay")).length;
+				expect(rejected).toBeGreaterThan(0);
+				expect(f.logs("[Break] ad segments ")).toEqual([
+					expect.stringMatching(
+						new RegExp(
+							`^\\[Break\\] ad segments live:testchannel cycle ${cycleStartedAt}: Twitch's stream had them in ${nativeCounts} ad-marked playlists, rejected HD replacements in 0 of ${rejected}${suffix}$`,
+						),
+					),
+				]);
 			} finally {
 				f.harness.restore();
 				vi.clearAllTimers();
