@@ -234,6 +234,29 @@ describe("_ensureIndependentVideoAdStyle", () => {
 			'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"])',
 		);
 	});
+
+	it("hides Twitch's bottom upsell banners through their footer portal only while blocking is on", () => {
+		const setGuardEnabled = () =>
+			T<(enabled: boolean) => boolean>("_setIndependentVideoAdGuardEnabled");
+		const footer = document.createElement("footer");
+		footer.id = "twilight-sticky-footer-root";
+		footer.innerHTML =
+			'<div class="Layout-sc-1xcs6mc-0 banner--M2FkY"><p class="title--M2FkY">GTAVI is LIVE.</p><a class="button--M2FkY" href="/directory/category/grand-theft-auto-vi">Watch, sub, score GTAVI loot.</a></div>';
+		const termsBanner = document.createElement("div");
+		termsBanner.setAttribute("data-a-target", "tos-bottom-banner");
+		document.body.append(termsBanner, footer);
+		try {
+			expect(setGuardEnabled()(true)).toBe(true);
+			expect(getComputedStyle(footer).display).toBe("none");
+			expect(getComputedStyle(termsBanner).display).not.toBe("none");
+			setGuardEnabled()(false);
+			expect(getComputedStyle(footer).display).not.toBe("none");
+		} finally {
+			setGuardEnabled()(false);
+			footer.remove();
+			termsBanner.remove();
+		}
+	});
 });
 
 describe("_handleIndependentVideoAdMutations", () => {
@@ -965,6 +988,22 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 			expect(logs).toEqual([
 				expect.stringMatching(/^Suppressed independent video advertisement/),
 			]);
+		});
+
+		it("does not log the promotional animation inside the hidden bottom banner", () => {
+			const footer = document.createElement("footer");
+			footer.id = "twilight-sticky-footer-root";
+			const animation = makeVideo(null).video;
+			animation.src =
+				"https://static-cdn.jtvnw.net/twilight-static-assets/GTAVI_Iguana-v1_LOOP.webm";
+			footer.appendChild(animation);
+			document.body.appendChild(footer);
+			try {
+				handle(animation);
+				expect(logs).toEqual([]);
+			} finally {
+				footer.remove();
+			}
 		});
 
 		it("stays quiet while blocking is off or the stream player is unknown", () => {

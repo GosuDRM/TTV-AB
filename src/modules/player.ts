@@ -2959,6 +2959,7 @@ const _INDEPENDENT_VIDEO_AD_SELECTOR = "video";
 const _INDEPENDENT_VIDEO_AD_LABEL = "video advertisement";
 const _INDEPENDENT_VIDEO_AD_LABEL_PREFIX = "this advertisement";
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
+const _UPSELL_BOTTOM_BANNER_ROOT_SELECTOR = "#twilight-sticky-footer-root";
 const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
 	"data-ttvab-independent-ad-suppressed";
 const _INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE =
@@ -3029,6 +3030,7 @@ function _ensureIndependentVideoAdStyle() {
 		'[data-ttvab-independent-ad-container="true"]{display:none!important}',
 		'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"]){display:none!important}',
 		'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"]){display:none!important}',
+		`${_UPSELL_BOTTOM_BANNER_ROOT_SELECTOR}{display:none!important}`,
 	].join("");
 	document.head.appendChild(style);
 	return true;
@@ -3656,6 +3658,7 @@ function _logUnrecognizedPlayingVideo(media) {
 			_UnrecognizedPlayingVideoLogState.logged.has(media) ||
 			!(media.currentSrc || media.getAttribute("src")) ||
 			_hasBlobMediaSource(media) ||
+			media.closest(_UPSELL_BOTTOM_BANNER_ROOT_SELECTOR) ||
 			_getPrimaryPlayerVideoMatch(media) !== false
 		)
 			return false;
