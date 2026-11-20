@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [27.0.2] - 2026-11-20
+
+Added
+
+- **Bottom Promotion Banners** - Hide the promotion banners Twitch shows along the bottom of the page, such as the GTA VI banner, and the GTA VI animation that crosses the bottom of the screen every 10 to 30 minutes, while ad blocking is on. Terms of service and cookie prompts stay visible.
+
 ## [27.0.1] - 2026-11-19
 
 Fixed

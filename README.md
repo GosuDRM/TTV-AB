@@ -74,6 +74,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v27.0.2 - 2026-11-20
+
+- **Bottom Promotion Banners** - Hide the promotion banners Twitch shows along the bottom of the page, such as the GTA VI banner, and the GTA VI animation that crosses the bottom of the screen every 10 to 30 minutes, while ad blocking is on. Terms of service and cookie prompts stay visible.
+
 ### v27.0.1 - 2026-11-19
 
 - **Ad Break Checks After a Player Error** - Give Twitch's player the stream access type it missed when it keeps playing after an internal error, so its checks for the end of an ad break match the stream instead of using an older or default type.
@@ -89,12 +93,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Audio Delay After Ad Breaks on HEVC and AV1 Streams** - Return to the stream without pausing and resuming the player when the ad-free replacement uses the same HEVC or AV1 video format and quality as the stream, instead of restarting playback at the end of the break, which could leave the audio playing behind the video. ([#101](https://github.com/GosuDRM/TTV-AB/issues/101))
 - **Ad Blocking After a Player Error** - Keep handling ad breaks and recording debug logs when Twitch's player recovers on its own after an internal error, instead of leaving the stream without ad break recovery for the rest of the visit. ([#103](https://github.com/GosuDRM/TTV-AB/issues/103))
 - **HD Replacement Diagnostics** - Record in debug logs why an ad-free HD replacement stream could not take over from the low-quality bridge, how far behind it was, and how far each stream's clock runs ahead, to help track down breaks that stay at low quality after the ads end. ([#102](https://github.com/GosuDRM/TTV-AB/issues/102))
-
-### v26.0.3 - 2026-11-06
-
-- **Brief Restart When Ad Breaks End** - Return to the stream without pausing and resuming the player when the ad-free replacement already matches the stream's quality, instead of a short restart at the end of every break with Low Quality Fallback off.
-- **Picture-by-Picture Player During Ads** - Leave Twitch's small picture-by-picture player on its own stream, so it no longer loads a second 1080p stream or disrupts the main player's ad-free replacement.
-- **Freeze at a Missing Segment** - Skip a hole of up to two and a half seconds in the buffered video after about a second of frozen video outside ad breaks, instead of staying frozen for several seconds.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
