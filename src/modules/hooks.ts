@@ -2609,8 +2609,11 @@ function _hookWorkerFetch() {
 							}
 							reportSuccessfulMediaResponse();
 							return new Response(
-								_applyEmptyHoldPlaylistContinuity(failedInfo, url, text) ??
-									text,
+								_removeClientSideAdSlotMarkers(
+									failedInfo,
+									_applyEmptyHoldPlaylistContinuity(failedInfo, url, text) ??
+										text,
+								),
 								getResponseInit(response),
 							);
 						}
