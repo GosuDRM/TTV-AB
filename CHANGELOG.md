@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [28.0.0] - 2026-11-26
+
+Fixed
+
+- **Error 4000 During Ad Breaks in Chromium Browsers** - Show the short silent hold when no ad-free replacement stream is ready, in Chrome, Edge, Brave, and other Chromium browsers on channels Twitch delivers as fragmented MP4 video, instead of stopping playback with a player error, such as error 4000, until the ads ended, even after refreshing the page. ([#107](https://github.com/GosuDRM/TTV-AB/issues/107))
+- **Ad Breaks After a Background Tab Slowdown** - Resume full ad break handling when Twitch's player was wrongly treated as stopped while its tab was in the background but kept playing, instead of ignoring it for the rest of the visit, which slowed every search for an ad-free stream by several seconds. ([#106](https://github.com/GosuDRM/TTV-AB/issues/106))
+- **Stream Shrinking During Some Ads** - Stop Twitch from starting ads that shrink the stream into a corner beside a blank ad area, so the stream stays full size and keeps playing. ([#108](https://github.com/GosuDRM/TTV-AB/issues/108))
+- **Extra Requests at the Start of Some Ad Breaks** - Wait the usual retry delay before checking every ad-free replacement stream again when none was found at the start of a break, instead of repeating the whole check right away, which doubled the requests to Twitch.
+
+Added
+
+- **Post-Ad Rebuild Diagnostics** - Record in debug logs, before each extra player rebuild after an ad break, the state of the video and when the stream last delivered new data, to help track down tabs that freeze after a break.
+- **Background Tab Diagnostics** - Record in debug logs when a tab comes back into view during an ad break after its player stopped receiving the stream while hidden, to help track down breaks that stay black in background tabs.
+
 ## [27.0.2] - 2026-11-20
 
 Added

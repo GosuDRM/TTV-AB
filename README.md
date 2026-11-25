@@ -74,6 +74,15 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v28.0.0 - 2026-11-26
+
+- **Error 4000 During Ad Breaks in Chromium Browsers** - Show the short silent hold when no ad-free replacement stream is ready, in Chrome, Edge, Brave, and other Chromium browsers on channels Twitch delivers as fragmented MP4 video, instead of stopping playback with a player error, such as error 4000, until the ads ended, even after refreshing the page. ([#107](https://github.com/GosuDRM/TTV-AB/issues/107))
+- **Ad Breaks After a Background Tab Slowdown** - Resume full ad break handling when Twitch's player was wrongly treated as stopped while its tab was in the background but kept playing, instead of ignoring it for the rest of the visit, which slowed every search for an ad-free stream by several seconds. ([#106](https://github.com/GosuDRM/TTV-AB/issues/106))
+- **Stream Shrinking During Some Ads** - Stop Twitch from starting ads that shrink the stream into a corner beside a blank ad area, so the stream stays full size and keeps playing. ([#108](https://github.com/GosuDRM/TTV-AB/issues/108))
+- **Extra Requests at the Start of Some Ad Breaks** - Wait the usual retry delay before checking every ad-free replacement stream again when none was found at the start of a break, instead of repeating the whole check right away, which doubled the requests to Twitch.
+- **Post-Ad Rebuild Diagnostics** - Record in debug logs, before each extra player rebuild after an ad break, the state of the video and when the stream last delivered new data, to help track down tabs that freeze after a break.
+- **Background Tab Diagnostics** - Record in debug logs when a tab comes back into view during an ad break after its player stopped receiving the stream while hidden, to help track down breaks that stay black in background tabs.
+
 ### v27.0.2 - 2026-11-20
 
 - **Bottom Promotion Banners** - Hide the promotion banners Twitch shows along the bottom of the page, such as the GTA VI banner, and the GTA VI animation that crosses the bottom of the screen every 10 to 30 minutes, while ad blocking is on. Terms of service and cookie prompts stay visible.
@@ -87,12 +96,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Ad Break Diagnostics** - Record in debug logs the first stream request that fails or is cancelled during each ad break, and how many of Twitch's ad-marked playlists and rejected HD replacement streams contained actual ad segments, to help track down breaks that stay at low quality.
 - **Consistent Stream Switching Rules** - Keep each timing rule for switching between Twitch's stream and the ad-free replacement stream in one place, so a future update cannot change one use of it and miss another. Playback is unchanged.
 - **Consistent Channel Statistics** - Check during every build that the popup and the extension count channel statistics the same way, so a future update cannot make the popup's channel list disagree with saved statistics.
-
-### v27.0.0 - 2026-11-19
-
-- **Audio Delay After Ad Breaks on HEVC and AV1 Streams** - Return to the stream without pausing and resuming the player when the ad-free replacement uses the same HEVC or AV1 video format and quality as the stream, instead of restarting playback at the end of the break, which could leave the audio playing behind the video. ([#101](https://github.com/GosuDRM/TTV-AB/issues/101))
-- **Ad Blocking After a Player Error** - Keep handling ad breaks and recording debug logs when Twitch's player recovers on its own after an internal error, instead of leaving the stream without ad break recovery for the rest of the visit. ([#103](https://github.com/GosuDRM/TTV-AB/issues/103))
-- **HD Replacement Diagnostics** - Record in debug logs why an ad-free HD replacement stream could not take over from the low-quality bridge, how far behind it was, and how far each stream's clock runs ahead, to help track down breaks that stay at low quality after the ads end. ([#102](https://github.com/GosuDRM/TTV-AB/issues/102))
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
