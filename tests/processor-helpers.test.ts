@@ -14181,3 +14181,65 @@ describe("client-side ad slot logging", () => {
 		}
 	});
 });
+
+describe("backup cooldown reset", () => {
+	const reset = () =>
+		T<(info: unknown, now: number) => boolean>(
+			"_forceClearBackupCooldownsIfStale",
+		);
+	const coolingInfo = (overrides: Record<string, unknown> = {}) =>
+		makeInfo({
+			FailedBackupPlayerTypes: new Map([
+				["site", 200_000],
+				["embed", 200_000],
+			]),
+			...overrides,
+		});
+	let logs: string[];
+
+	beforeEach(() => {
+		logs = [];
+		g._log = (message: string) => logs.push(message);
+	});
+
+	it("keeps fresh cooldowns early in a break that has no clean backup yet", () => {
+		const info = coolingInfo({ VisibleAdStartedAt: 100_000 });
+		expect(reset()(info, 103_000)).toBe(false);
+		expect(info.FailedBackupPlayerTypes.size).toBe(2);
+		expect(reset()(info, 109_000)).toBe(true);
+		expect(info.FailedBackupPlayerTypes.size).toBe(0);
+		expect(logs).toEqual([
+			"[Trace] No clean backup 9.0s into the break with all types cooling down — forcing cooldown reset",
+		]);
+	});
+
+	it("measures a clean backup from this break by its last clean playlist", () => {
+		const info = coolingInfo({
+			VisibleAdStartedAt: 100_000,
+			LastCleanBackupAt: 101_000,
+		});
+		expect(reset()(info, 108_000)).toBe(false);
+		expect(reset()(info, 111_000)).toBe(true);
+		expect(logs).toEqual([
+			"[Trace] Backup is 10.0s stale with all types cooling down — forcing cooldown reset",
+		]);
+	});
+
+	it("ignores a backup from an earlier break and needs every type cooling down", () => {
+		const earlier = coolingInfo({
+			VisibleAdStartedAt: 100_000,
+			LastCleanBackupAt: 50_000,
+		});
+		expect(reset()(earlier, 102_000)).toBe(false);
+		const partial = coolingInfo({
+			VisibleAdStartedAt: 100_000,
+			FailedBackupPlayerTypes: new Map([
+				["site", 200_000],
+				["embed", 105_000],
+			]),
+		});
+		expect(reset()(partial, 120_000)).toBe(false);
+		expect(reset()(coolingInfo(), 500_000)).toBe(false);
+		expect(logs).toEqual([]);
+	});
+});
