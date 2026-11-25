@@ -5367,6 +5367,44 @@ function _tryRunPendingPostAdRecoveryOperation(
 	return false;
 }
 
+function _describePostAdRebuildEvidence(mediaKey, previousReloadAt, now) {
+	let player = null;
+	try {
+		player = _getPlayerAndState()?.player || null;
+	} catch {}
+	const video = player?.getHTMLVideoElement?.() || null;
+	let worker = null;
+	try {
+		worker = _getPlayerCore(player)?.worker || null;
+	} catch {}
+	const generation = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
+	const deliveredAt = Math.max(
+		0,
+		Number(worker?.__TTVABPlaybackObservedAtByMediaKey?.get?.(mediaKey)) || 0,
+	);
+	const delivery = !worker
+		? "no player worker"
+		: deliveredAt > previousReloadAt
+			? `worker #g${generation} last delivered a playlist or segment ${((now - deliveredAt) / 1000).toFixed(1)}s ago`
+			: previousReloadAt > 0
+				? `worker #g${generation} delivered no playlist or segment since the previous rebuild ${((now - previousReloadAt) / 1000).toFixed(1)}s ago`
+				: `worker #g${generation} delivered no playlist or segment yet`;
+	if (!(video instanceof HTMLMediaElement)) return `no video; ${delivery}`;
+	let buffer = "empty";
+	let frames = "unknown";
+	try {
+		const ranges = video.buffered;
+		if (ranges.length > 0)
+			buffer = `${Math.max(0, ranges.end(ranges.length - 1) - video.currentTime).toFixed(1)}s ahead`;
+		const total =
+			video instanceof HTMLVideoElement
+				? video.getVideoPlaybackQuality?.()?.totalVideoFrames
+				: undefined;
+		if (Number.isFinite(total)) frames = String(total);
+	} catch {}
+	return `video ready ${video.readyState}, network ${video.networkState}, paused ${video.paused}, time ${(Number(video.currentTime) || 0).toFixed(1)}, buffer ${buffer}, frames ${frames}, error ${Number(video.error?.code) || 0}; ${delivery}`;
+}
+
 function _requestPostAdRecoveryReload(
 	channel,
 	mediaKey,
@@ -5386,11 +5424,20 @@ function _requestPostAdRecoveryReload(
 		return false;
 	}
 
+	const evidence = _describePostAdRebuildEvidence(
+		mediaKey,
+		Math.max(
+			0,
+			Number(_PostAdRecoveryTransactionState.requiredNativeReloadAt) || 0,
+		),
+		now,
+	);
 	_PostAdRecoveryTransactionState.reloadRequestCount++;
 	_PostAdRecoveryTransactionState.lastReloadRequestAt = now;
 	const reloadAtBefore = _getPlayerReloadAtForMediaKey(mediaKey);
 	let taskAccepted = false;
 	_log(message, "warning");
+	_log(`[Recovery] Before the rebuild: ${evidence}`, "info");
 	try {
 		taskAccepted =
 			_doPlayerTask(false, true, {

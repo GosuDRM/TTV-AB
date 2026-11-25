@@ -4957,6 +4957,62 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		});
 	});
 
+	it("logs whether the stalled player's worker kept delivering stream data before a rebuild", () => {
+		const now = 1_000_000;
+		const video = pipElement as HTMLVideoElement;
+		Object.defineProperty(video, "readyState", { value: 1 });
+		Object.defineProperty(video, "networkState", { value: 2 });
+		Object.defineProperty(video, "buffered", { value: { length: 0 } });
+		Object.defineProperty(video, "getVideoPlaybackQuality", {
+			value: () => ({ totalVideoFrames: 0 }),
+		});
+		const observedAt = new Map([["live:testchannel", now - 20000]]);
+		const worker = {
+			__TTVABGeneration: 2,
+			__TTVABPlaybackObservedAtByMediaKey: observedAt,
+		};
+		g._getPlayerCore = () => ({ state: {}, worker });
+		const describeEvidence = T<
+			(mediaKey: string, previousReloadAt: number, now: number) => string
+		>("_describePostAdRebuildEvidence");
+		expect(describeEvidence("live:testchannel", now - 16000, now)).toBe(
+			"video ready 1, network 2, paused true, time 0.0, buffer empty, frames 0, error 0; worker #g2 delivered no playlist or segment since the previous rebuild 16.0s ago",
+		);
+		observedAt.set("live:testchannel", now - 2000);
+		expect(describeEvidence("live:testchannel", now - 16000, now)).toBe(
+			"video ready 1, network 2, paused true, time 0.0, buffer empty, frames 0, error 0; worker #g2 last delivered a playlist or segment 2.0s ago",
+		);
+		g._getPlayerCore = () => ({ state: {} });
+		expect(describeEvidence("live:testchannel", 0, now)).toMatch(
+			/; no player worker$/,
+		);
+
+		observedAt.set("live:testchannel", Date.now() - 2000);
+		g._getPlayerCore = () => ({ state: {}, worker });
+		const log = vi.spyOn(g, "_log");
+		T<
+			(
+				channel: string,
+				mediaKey: string,
+				cycle: number,
+				message: string,
+			) => boolean
+		>("_requestPostAdRecoveryReload")(
+			"testchannel",
+			"live:testchannel",
+			100,
+			"Player still stalling after ad. Rebuilding native player...",
+		);
+		const messages = log.mock.calls.map(([message]) => String(message));
+		const stallIndex = messages.indexOf(
+			"Player still stalling after ad. Rebuilding native player...",
+		);
+		expect(stallIndex).toBeGreaterThanOrEqual(0);
+		expect(messages[stallIndex + 1]).toMatch(
+			/^\[Recovery\] Before the rebuild: video ready 1, network 2, paused true, .*; worker #g2 last delivered a playlist or segment \d+\.\ds ago$/,
+		);
+	});
+
 	it("retains one real rebuild after the soft reload and rejects further recovery", () => {
 		pipElement = null;
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
