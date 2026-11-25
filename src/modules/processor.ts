@@ -399,7 +399,13 @@ function _forceClearBackupCooldownsIfStale(
 ) {
 	const _BACKUP_MAX_STALENESS_MS = 8000;
 	if (!info?.FailedBackupPlayerTypes?.clear) return false;
-	const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+	const cycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+	const lastCleanAt = Math.max(0, Number(info.LastCleanBackupAt) || 0);
+	const hasCleanBackupThisBreak =
+		lastCleanAt > 0 && lastCleanAt >= cycleStartedAt;
+	const staleSince = hasCleanBackupThisBreak ? lastCleanAt : cycleStartedAt;
+	if (staleSince <= 0) return false;
+	const backupAgeMs = now - staleSince;
 	if (backupAgeMs < _BACKUP_MAX_STALENESS_MS) return false;
 	if (info.FailedBackupPlayerTypes.size === 0) return false;
 
@@ -411,7 +417,7 @@ function _forceClearBackupCooldownsIfStale(
 	info.FailedBackupPlayerTypes.clear();
 	info.LoggedBackupAdsByType?.clear?.();
 	_log(
-		`[Trace] Backup is ${(backupAgeMs / 1000).toFixed(1)}s stale with all types cooling down — forcing cooldown reset`,
+		`[Trace] ${hasCleanBackupThisBreak ? `Backup is ${(backupAgeMs / 1000).toFixed(1)}s stale` : `No clean backup ${(backupAgeMs / 1000).toFixed(1)}s into the break`} with all types cooling down — forcing cooldown reset`,
 		"warning",
 	);
 	return true;
