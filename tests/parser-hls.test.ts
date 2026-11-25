@@ -625,6 +625,76 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		).rejects.toThrow(/media sequence/);
 	});
 
+	it("declares the fragmented hold audio with the transport hold's AAC configuration", async () => {
+		const respond = T<
+			(url: string, realFetch: typeof fetch) => Promise<Response>
+		>("_getEmptyAdHoldResponse");
+		const realFetch = (async (input: string) =>
+			new Response(Buffer.from(input.split(",")[1], "base64"))) as typeof fetch;
+		const fetchBytes = async (url: string) =>
+			Buffer.from(await (await respond(url, realFetch)).arrayBuffer());
+		const init = await fetchBytes(
+			"https://www.twitch.tv/__ttvab_empty_hold_init.mp4?media=live%3Atestchannel",
+		);
+		const transport = await fetchBytes(
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=1&media=live%3Atestchannel",
+		);
+
+		let adts = -1;
+		for (let offset = 0; offset < transport.length && adts < 0; offset += 188) {
+			let payload = offset + 4;
+			if (transport[offset + 3] & 0x20) payload += 1 + transport[payload];
+			if (
+				transport[offset + 1] & 0x40 &&
+				transport.readUIntBE(payload, 3) === 1 &&
+				transport[payload + 3] === 0xc0
+			)
+				adts = payload + 9 + transport[payload + 8];
+		}
+		expect(adts).toBeGreaterThan(0);
+		expect(transport.readUInt16BE(adts) & 0xfff6).toBe(0xfff0);
+		const objectType = (transport[adts + 2] >> 6) + 1;
+		const frequencyIndex = (transport[adts + 2] >> 2) & 15;
+		const channels =
+			((transport[adts + 2] & 1) << 2) | (transport[adts + 3] >> 6);
+		const expectedConfig = Buffer.alloc(2);
+		expectedConfig.writeUInt16BE(
+			(objectType << 11) | (frequencyIndex << 7) | (channels << 3),
+		);
+
+		const ftypSize = init.readUInt32BE(0);
+		expect(ftypSize + init.readUInt32BE(ftypSize)).toBe(init.length);
+		const esds = init.indexOf("esds", 0, "latin1") - 4;
+		expect(esds).toBeGreaterThan(0);
+		const esdsEnd = esds + init.readUInt32BE(esds);
+		const sampleEntry = init.indexOf("mp4a", 0, "latin1") - 4;
+		expect(sampleEntry).toBeGreaterThan(0);
+		expect(sampleEntry + init.readUInt32BE(sampleEntry)).toBe(esdsEnd + 20);
+		const readDescriptor = (offset: number) => {
+			let size = 0;
+			let cursor = offset + 1;
+			let byte = 0x80;
+			while (byte & 0x80) {
+				byte = init[cursor++];
+				size = (size << 7) | (byte & 0x7f);
+			}
+			return { tag: init[offset], start: cursor, end: cursor + size };
+		};
+		const elementary = readDescriptor(esds + 12);
+		expect(elementary.tag).toBe(3);
+		expect(elementary.end).toBeLessThanOrEqual(esdsEnd);
+		const decoderConfig = readDescriptor(elementary.start + 3);
+		expect(decoderConfig.tag).toBe(4);
+		expect(decoderConfig.end).toBeLessThanOrEqual(elementary.end);
+		expect(init[decoderConfig.start]).toBe(0x40);
+		const specificInfo = readDescriptor(decoderConfig.start + 13);
+		expect(specificInfo.tag).toBe(5);
+		expect(specificInfo.end).toBeLessThanOrEqual(decoderConfig.end);
+		expect(
+			init.subarray(specificInfo.start, specificInfo.end).toString("hex"),
+		).toBe(expectedConfig.toString("hex"));
+	});
+
 	it("uses self-contained transport media without native encryption or byte ranges", () => {
 		const create = T<(text: string, info: Record<string, unknown>) => string>(
 			"_createEmptyAdHoldPlaylist",
