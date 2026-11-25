@@ -2555,12 +2555,27 @@ function _logClientSideAdSlots(info: Partial<TTVABStreamInfo>, text) {
 				_hasPlaylistAdMarkers(text) ||
 				_playlistHasKnownAdSegments(text, { includeCached: false });
 			_log(
-				`[CSAI] Twitch announced a client-side ad slot for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}${Number.isFinite(plannedSeconds) && plannedSeconds > 0 ? ` (planned ${Math.round(plannedSeconds)}s)` : ""}: ${hasStreamAds ? "the stream also has ad markers" : info.IsShowingAd || info.IsHoldingBackupAfterAd ? "no ad segments in the stream, ad break replacement still served" : "no ad segments in the stream, marker reaches the player"}`,
+				`[CSAI] Twitch announced a client-side ad slot for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}${Number.isFinite(plannedSeconds) && plannedSeconds > 0 ? ` (planned ${Math.round(plannedSeconds)}s)` : ""}: ${hasStreamAds ? "the stream also has ad markers" : info.IsShowingAd || info.IsHoldingBackupAfterAd ? "no ad segments in the stream, ad break replacement still served" : __TTVAB_STATE__?.IsAdStrippingEnabled === true ? "no ad segments in the stream, marker removed" : "no ad segments in the stream, marker reaches the player"}`,
 				"info",
 			);
 		}
 		_ClientSideAdSlotLogs.set(info, logged);
 	} catch {}
+}
+
+function _removeClientSideAdSlotMarkers(info: Partial<TTVABStreamInfo>, text) {
+	if (
+		info?.MediaType !== "live" ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		typeof text !== "string" ||
+		!text.includes("twitch-maf-ad")
+	)
+		return text;
+	return text.replace(
+		/^#EXT-X-DATERANGE:([^\r\n]*)(?:\r?\n|$)/gm,
+		(line, attributes) =>
+			_parseAttrs(attributes).CLASS === "twitch-maf-ad" ? "" : line,
+	);
 }
 
 function _observeServedPrefetchTimeline(
@@ -3817,7 +3832,7 @@ function _applyPlaylistContinuity(
 			previousMapping,
 			output,
 		);
-		return output;
+		return _removeClientSideAdSlotMarkers(info, output);
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
 		const holdOutput =
@@ -6535,15 +6550,18 @@ async function _processM3U8Attempt(
 	) {
 		if (activeHandoffId) {
 			initialInfo._CodecHandoffPendingId = activeHandoffId;
-			return _holdRetiringCodecRequest(
+			return _removeClientSideAdSlotMarkers(
 				initialInfo,
-				url,
-				text,
-				requestCodecs,
-				requestIsEnhanced,
-				requestSignal,
-				activeHandoffId,
-				initialRetiringCodec,
+				await _holdRetiringCodecRequest(
+					initialInfo,
+					url,
+					text,
+					requestCodecs,
+					requestIsEnhanced,
+					requestSignal,
+					activeHandoffId,
+					initialRetiringCodec,
+				),
 			);
 		}
 	}
@@ -7052,16 +7070,19 @@ async function _processM3U8Attempt(
 				);
 			throw _createCodecHandoffAbortError(requestSignal);
 		}
-		return _holdRetiringCodecRequest(
+		return _removeClientSideAdSlotMarkers(
 			info,
-			url,
-			text,
-			requestCodecs,
-			requestIsEnhanced,
-			requestSignal,
-			handoffId,
-			retiringCodec,
-			unsafeResponseDeadlineAt,
+			await _holdRetiringCodecRequest(
+				info,
+				url,
+				text,
+				requestCodecs,
+				requestIsEnhanced,
+				requestSignal,
+				handoffId,
+				retiringCodec,
+				unsafeResponseDeadlineAt,
+			),
 		);
 	}
 }

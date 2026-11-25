@@ -14022,8 +14022,8 @@ describe("client-side ad slot logging", () => {
 			withMarkers(slotMarker("maf-ad-first"), slotMarker("maf-ad-second")),
 		);
 		expect(logs).toEqual([
-			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
-			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
+			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker removed",
+			"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker removed",
 		]);
 		expect(logs.join("\n")).not.toMatch(/secret|maf-ad-first|maf-ad-second/);
 	});
@@ -14060,6 +14060,87 @@ describe("client-side ad slot logging", () => {
 		expect(logs).toEqual([]);
 	});
 
+	it("removes only client-side ad slot markers from live playlists while blocking is on", () => {
+		const remove = T<(info: unknown, text: string) => string>(
+			"_removeClientSideAdSlotMarkers",
+		);
+		const reordered = `#EXT-X-DATERANGE:CLASS="twitch-maf-ad",ID="maf-ad-reordered",START-DATE="2026-09-19T16:12:49.977Z",PLANNED-DURATION=30.000`;
+		const lookalike = slotMarker("maf-ad-like", "twitch-maf-ad-preview");
+		const playlist = withMarkers(
+			slotMarker("maf-ad-a"),
+			reordered,
+			lookalike,
+			slotMarker("stitched-1", "twitch-stitched-ad"),
+		);
+		const expected = withMarkers(
+			lookalike,
+			slotMarker("stitched-1", "twitch-stitched-ad"),
+		);
+		expect(remove(makeInfo(), playlist)).toBe(expected);
+		expect(remove(makeInfo(), playlist.replace(/\n/g, "\r\n"))).toBe(
+			expected.replace(/\n/g, "\r\n"),
+		);
+		expect(
+			remove(makeInfo(), `${cleanPlaylist}\n${slotMarker("maf-ad-end")}`),
+		).toBe(`${cleanPlaylist}\n`);
+		expect(remove(makeInfo(), cleanPlaylist)).toBe(cleanPlaylist);
+		expect(
+			remove(makeInfo({ MediaType: "vod", MediaKey: "vod:123" }), playlist),
+		).toBe(playlist);
+		const state = getState();
+		state.IsAdStrippingEnabled = false;
+		try {
+			expect(remove(makeInfo(), playlist)).toBe(playlist);
+		} finally {
+			state.IsAdStrippingEnabled = true;
+		}
+	});
+
+	it("serves the live native stream without the slot marker and without ad handling", async () => {
+		const state = getState();
+		const url = "https://video-weaver.example.ttvnw.net/v1/playlist/maf.m3u8";
+		const info = makeInfo();
+		const restore = snapshotGlobals(["_findBackupStream"]);
+		const previous = {
+			PageMediaType: state.PageMediaType,
+			PageChannel: state.PageChannel,
+			PageMediaKey: state.PageMediaKey,
+			StreamInfos: state.StreamInfos,
+			StreamInfosByUrl: state.StreamInfosByUrl,
+		};
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			StreamInfos: { "live:testchannel": info },
+			StreamInfosByUrl: { [url]: info },
+		});
+		const findBackup = vi.fn();
+		g._findBackupStream = findBackup;
+		const playlist = withMarkers(slotMarker("maf-ad-served"));
+		try {
+			const out = await T<
+				(url: string, text: string, realFetch: unknown) => Promise<string>
+			>("_processM3U8")(url, playlist, async () => {
+				throw new Error("no fetch expected");
+			});
+			expect(out).not.toContain("twitch-maf-ad");
+			for (const line of cleanPlaylist
+				.split("\n")
+				.filter((entry) =>
+					/^(?:#EXTINF|https:|#EXT-X-TWITCH-PREFETCH|#EXT-X-DATERANGE|#EXT-X-PROGRAM-DATE-TIME)/.test(
+						entry,
+					),
+				))
+				expect(out).toContain(line);
+			expect(info.IsShowingAd).toBe(false);
+			expect(findBackup).not.toHaveBeenCalled();
+		} finally {
+			Object.assign(state, previous);
+			restore();
+		}
+	});
+
 	it("serves the native playlist unchanged and logs the slot from the full processor", async () => {
 		const state = getState();
 		const url = "https://video-weaver.example.ttvnw.net/v1/playlist/maf.m3u8";
@@ -14092,7 +14173,7 @@ describe("client-side ad slot logging", () => {
 			expect(info.IsShowingAd).toBe(false);
 			expect(findBackup).not.toHaveBeenCalled();
 			expect(logs.filter((line) => line.startsWith("[CSAI]"))).toEqual([
-				"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker reaches the player",
+				"[CSAI] Twitch announced a client-side ad slot for live:testchannel (planned 60s): no ad segments in the stream, marker removed",
 			]);
 		} finally {
 			Object.assign(state, previous);
