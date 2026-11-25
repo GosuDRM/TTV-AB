@@ -3832,7 +3832,7 @@ function _reviveCrashedPlaybackWorker(worker, now = Date.now()) {
 		_clearWorkerRecoveryNotice(mediaKey);
 	}
 	_log(
-		`[Recovery] Worker #g${generation} kept playing after its error; resuming ad break handling for ${mediaKey}`,
+		`[Recovery] Worker #g${generation} kept playing after its crash; resuming ad break handling for ${mediaKey}`,
 		"success",
 	);
 	return true;
@@ -4902,12 +4902,15 @@ function _startWorkerWatchdog() {
 			worker.__TTVABHiddenHeartbeatMissingSamples = 0;
 		}
 		if (hiddenPlaybackStopped) {
-			_recoverCrashedWorker(
-				worker,
-				workerContext,
-				"Worker unresponsive while hidden playback stopped advancing",
-				"warning",
-			);
+			if (
+				_recoverCrashedWorker(
+					worker,
+					workerContext,
+					"Worker unresponsive while hidden playback stopped advancing",
+					"warning",
+				)
+			)
+				worker.__TTVABCrashRevivable = true;
 			return;
 		}
 		if (

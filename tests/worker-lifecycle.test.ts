@@ -7267,7 +7267,7 @@ describe("crashed playback worker that keeps playing", () => {
 		);
 		expect(g._clearWorkerRecoveryNotice).toHaveBeenCalledWith(mediaKey);
 		expect(log).toHaveBeenCalledWith(
-			"[Recovery] Worker #g1 kept playing after its error; resuming ad break handling for live:testchannel",
+			"[Recovery] Worker #g1 kept playing after its crash; resuming ad break handling for live:testchannel",
 			"success",
 		);
 		for (let tick = 0; tick < 14; tick++) {
@@ -7385,6 +7385,45 @@ describe("crashed playback worker that keeps playing", () => {
 		emitHarnessWorkerPong(worker);
 		expect(worker.__TTVABCrashed).toBe(false);
 		expect(ownerGeneration()).toBe(worker.__TTVABGeneration);
+	});
+
+	it("revives the same worker after a hidden-tab heartbeat crash once it proves playback", () => {
+		let hidden = true;
+		vi.stubGlobal("_isNativeDocumentHidden", () => hidden);
+		vi.stubGlobal("_isPlaybackPageUnfocused", () => hidden);
+		const media = document.createElement("video");
+		media.currentTime = 10;
+		vi.stubGlobal("_getPrimaryMediaElement", () => media);
+		T<() => void>("_startWorkerWatchdog")();
+		try {
+			for (let tick = 0; tick < 12 && !worker.__TTVABCrashed; tick++)
+				vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBe(true);
+			expect(worker.__TTVABCrashRevivable).toBe(true);
+			hidden = false;
+			for (
+				let tick = 0;
+				tick < 20 && !vi.mocked(g._doPlayerTask).mock.calls.length;
+				tick++
+			)
+				vi.advanceTimersByTime(1000);
+			expect(g._doPlayerTask).toHaveBeenCalledOnce();
+			const reloadAt = Number(recovery().reloadDispatchedAt) || 0;
+			expect(reloadAt).toBeGreaterThan(0);
+			observe(reloadAt - 1);
+			emitHarnessWorkerPong(worker);
+			expect(worker.__TTVABCrashed).toBe(true);
+			observe(Date.now());
+			emitHarnessWorkerPong(worker);
+			expect(worker.__TTVABCrashed).toBe(false);
+			expect(tracked()).toContain(worker);
+			expect(recovery()).toMatchObject({ phase: "stabilizing", attempts: 1 });
+			expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		} finally {
+			const id = g._workerWatchdogID as ReturnType<typeof setInterval> | null;
+			if (id !== null) clearInterval(id);
+			g._workerWatchdogID = null;
+		}
 	});
 
 	it("crashes a revived worker again when it stops answering heartbeats", () => {
