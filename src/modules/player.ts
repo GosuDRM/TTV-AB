@@ -95,6 +95,7 @@ const _PlaybackIntentState = {
 	pictureInPictureVisibleSinceAt: 0,
 	pictureInPictureVisibilityMediaKey: null as string | null,
 	pagePlaybackVisibilityMediaKey: null as string | null,
+	pagePlaybackHiddenSinceAt: 0,
 	pictureInPicturePauseListener: null as (() => void) | null,
 	pictureInPicturePlayListener: null as (() => void) | null,
 };
@@ -1271,6 +1272,27 @@ function _isNativeDocumentHidden(context = null) {
 	return true;
 }
 
+function _logQuietPlayerWhileHidden(mediaKey, hiddenSinceAt, now) {
+	const hiddenMs = now - hiddenSinceAt;
+	const inAdBreak = Boolean(
+		mediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === mediaKey,
+	);
+	const inPostAdRecovery = Boolean(
+		mediaKey &&
+			_normalizeMediaKey(_PostAdRecoveryTransactionState.mediaKey) === mediaKey,
+	);
+	if (!mediaKey || hiddenMs < 30000 || (!inAdBreak && !inPostAdRecovery))
+		return false;
+	if (now - _getPlayerWorkerDelivery(mediaKey).deliveredAt < 30000)
+		return false;
+	_log(
+		`[Recovery] Back in view after ${(hiddenMs / 1000).toFixed(1)}s hidden during ${inAdBreak ? "an ad break" : "post-ad recovery"}: ${_describePlaybackEvidence(mediaKey, hiddenSinceAt, now, "the tab was hidden")}`,
+		"warning",
+	);
+	return true;
+}
+
 function _syncPagePlaybackVisibilityState(forceHidden = false) {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return false;
 	if (!Object.hasOwn(__TTVAB_STATE__, "PagePlaybackVisibleSinceAt"))
@@ -1310,6 +1332,19 @@ function _syncPagePlaybackVisibilityState(forceHidden = false) {
 			...(pageMediaKey ? { targetMediaKey: pageMediaKey } : {}),
 			value: nextVisibleSinceAt,
 		});
+	}
+	const now = Date.now();
+	const hiddenSinceAt =
+		previousPageMediaKey === pageMediaKey
+			? Math.max(0, Number(_PlaybackIntentState.pagePlaybackHiddenSinceAt) || 0)
+			: 0;
+	if (isHidden) {
+		_PlaybackIntentState.pagePlaybackHiddenSinceAt =
+			currentVisibleSinceAt > 0 || !hiddenSinceAt ? now : hiddenSinceAt;
+	} else {
+		_PlaybackIntentState.pagePlaybackHiddenSinceAt = 0;
+		if (currentVisibleSinceAt === 0 && hiddenSinceAt > 0)
+			_logQuietPlayerWhileHidden(pageMediaKey, hiddenSinceAt, now);
 	}
 	__TTVAB_STATE__.PagePlaybackVisibleSinceAt = nextVisibleSinceAt;
 	_PlaybackIntentState.pagePlaybackVisibilityMediaKey = pageMediaKey;
@@ -5367,27 +5402,35 @@ function _tryRunPendingPostAdRecoveryOperation(
 	return false;
 }
 
-function _describePostAdRebuildEvidence(mediaKey, previousReloadAt, now) {
+function _getPlayerWorkerDelivery(mediaKey) {
 	let player = null;
 	try {
 		player = _getPlayerAndState()?.player || null;
 	} catch {}
-	const video = player?.getHTMLVideoElement?.() || null;
 	let worker = null;
 	try {
 		worker = _getPlayerCore(player)?.worker || null;
 	} catch {}
+	return {
+		player,
+		worker,
+		deliveredAt: Math.max(
+			0,
+			Number(worker?.__TTVABPlaybackObservedAtByMediaKey?.get?.(mediaKey)) || 0,
+		),
+	};
+}
+
+function _describePlaybackEvidence(mediaKey, sinceAt, now, sinceLabel) {
+	const { player, worker, deliveredAt } = _getPlayerWorkerDelivery(mediaKey);
+	const video = player?.getHTMLVideoElement?.() || null;
 	const generation = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
-	const deliveredAt = Math.max(
-		0,
-		Number(worker?.__TTVABPlaybackObservedAtByMediaKey?.get?.(mediaKey)) || 0,
-	);
 	const delivery = !worker
 		? "no player worker"
-		: deliveredAt > previousReloadAt
+		: deliveredAt > sinceAt
 			? `worker #g${generation} last delivered a playlist or segment ${((now - deliveredAt) / 1000).toFixed(1)}s ago`
-			: previousReloadAt > 0
-				? `worker #g${generation} delivered no playlist or segment since the previous rebuild ${((now - previousReloadAt) / 1000).toFixed(1)}s ago`
+			: sinceAt > 0
+				? `worker #g${generation} delivered no playlist or segment since ${sinceLabel} ${((now - sinceAt) / 1000).toFixed(1)}s ago`
 				: `worker #g${generation} delivered no playlist or segment yet`;
 	if (!(video instanceof HTMLMediaElement)) return `no video; ${delivery}`;
 	let buffer = "empty";
@@ -5424,13 +5467,14 @@ function _requestPostAdRecoveryReload(
 		return false;
 	}
 
-	const evidence = _describePostAdRebuildEvidence(
+	const evidence = _describePlaybackEvidence(
 		mediaKey,
 		Math.max(
 			0,
 			Number(_PostAdRecoveryTransactionState.requiredNativeReloadAt) || 0,
 		),
 		now,
+		"the previous rebuild",
 	);
 	_PostAdRecoveryTransactionState.reloadRequestCount++;
 	_PostAdRecoveryTransactionState.lastReloadRequestAt = now;

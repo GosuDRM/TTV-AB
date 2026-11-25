@@ -8,7 +8,7 @@ import {
 	vi,
 } from "vitest";
 import { stopPlayerBufferMonitor } from "./helpers/player-monitors";
-import { loadModule, T } from "./helpers/runtime";
+import { loadModule, snapshotGlobals, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -3863,6 +3863,7 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		};
 		const intentState = g._PlaybackIntentState as Record<string, unknown>;
 		intentState.pagePlaybackVisibilityMediaKey = "live:testchannel";
+		intentState.pagePlaybackHiddenSinceAt = 0;
 		intentState.pictureInPictureVisibilityMediaKey = null;
 		intentState.pictureInPictureVisibleSinceAt = 0;
 		g._isNativeDocumentHidden = (context: Record<string, unknown>) =>
@@ -3882,6 +3883,82 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		g._getActivePictureInPicturePlaybackContext = savedPipContext;
 		g._broadcastWorkers = savedBroadcast;
 		vi.useRealTimers();
+	});
+
+	it("logs a quiet player once when the tab returns during an ad break", () => {
+		const restoreGlobals = snapshotGlobals([
+			"_getPlayerAndState",
+			"_getPlayerCore",
+		]);
+		const transaction = g._PostAdRecoveryTransactionState as Record<
+			string,
+			unknown
+		>;
+		const savedTransactionMediaKey = transaction.mediaKey;
+		transaction.mediaKey = null;
+		const video = document.createElement("video");
+		Object.defineProperty(video, "buffered", { value: { length: 0 } });
+		Object.defineProperty(video, "getVideoPlaybackQuality", {
+			value: () => ({ totalVideoFrames: 0 }),
+		});
+		const observedAt = new Map([["live:testchannel", 700000]]);
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => video },
+			state: null,
+		});
+		g._getPlayerCore = () => ({
+			worker: {
+				__TTVABGeneration: 2,
+				__TTVABPlaybackObservedAtByMediaKey: observedAt,
+			},
+		});
+		const log = vi.spyOn(g, "_log");
+		const backInView = () =>
+			log.mock.calls
+				.map(([message]) => String(message))
+				.filter((message) => message.startsWith("[Recovery] Back in view"));
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const hideFor = (ms: number) => {
+			hidden = true;
+			sync()();
+			vi.advanceTimersByTime(ms);
+			hidden = false;
+			sync()();
+		};
+		try {
+			hidden = false;
+			sync()();
+			vi.advanceTimersByTime(1000);
+			state.CurrentAdMediaKey = "live:testchannel";
+			hideFor(20000);
+			expect(backInView()).toEqual([]);
+			hideFor(60000);
+			expect(backInView()).toEqual([
+				"[Recovery] Back in view after 60.0s hidden during an ad break: video ready 0, network 0, paused true, time 0.0, buffer empty, frames 0, error 0; worker #g2 delivered no playlist or segment since the tab was hidden 60.0s ago",
+			]);
+			sync()();
+			expect(backInView()).toHaveLength(1);
+			hidden = true;
+			sync()();
+			vi.advanceTimersByTime(50000);
+			observedAt.set("live:testchannel", Date.now() - 5000);
+			hidden = false;
+			sync()();
+			expect(backInView()).toHaveLength(1);
+			state.CurrentAdMediaKey = null;
+			observedAt.set("live:testchannel", 0);
+			hideFor(60000);
+			expect(backInView()).toHaveLength(1);
+			transaction.mediaKey = "live:testchannel";
+			hideFor(45000);
+			expect(backInView().at(-1)).toMatch(
+				/^\[Recovery\] Back in view after 45\.0s hidden during post-ad recovery: .*; worker #g2 delivered no playlist or segment since the tab was hidden 45\.0s ago$/,
+			);
+		} finally {
+			log.mockRestore();
+			transaction.mediaKey = savedTransactionMediaKey;
+			restoreGlobals();
+		}
 	});
 
 	it("broadcasts only real hidden and visible edges while treating pip as visible", () => {
@@ -4972,9 +5049,16 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			__TTVABPlaybackObservedAtByMediaKey: observedAt,
 		};
 		g._getPlayerCore = () => ({ state: {}, worker });
-		const describeEvidence = T<
-			(mediaKey: string, previousReloadAt: number, now: number) => string
-		>("_describePostAdRebuildEvidence");
+		const describePlayback = T<
+			(
+				mediaKey: string,
+				sinceAt: number,
+				now: number,
+				sinceLabel: string,
+			) => string
+		>("_describePlaybackEvidence");
+		const describeEvidence = (mediaKey: string, sinceAt: number, at: number) =>
+			describePlayback(mediaKey, sinceAt, at, "the previous rebuild");
 		expect(describeEvidence("live:testchannel", now - 16000, now)).toBe(
 			"video ready 1, network 2, paused true, time 0.0, buffer empty, frames 0, error 0; worker #g2 delivered no playlist or segment since the previous rebuild 16.0s ago",
 		);
