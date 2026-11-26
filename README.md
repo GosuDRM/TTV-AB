@@ -74,6 +74,17 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v28.0.1 - 2026-11-26
+
+- **Update Notice** - The Stable label next to the version changes to Update available when your browser's add-on store has a newer version, and clicking it explains how to get it. The popup checks at most once an hour, and only while it is open.
+- **Debug Logs From Before a Refresh** - Include the last saved log details from before you refreshed a Twitch tab, so a problem that made you refresh can still be traced.
+- **Video Error Details** - Record in debug logs the video error the browser reports, such as error 4000, with its message, even after Twitch's player clears it.
+- **Current Stream Summary** - Show in debug logs whether each tab is playing Twitch's stream, an ad-free replacement, or the silent hold, along with the stream's format and qualities.
+- **Playback Diagnostics** - Record in debug logs when the browser refuses to start playback and when a stream request fails shortly after an ad break.
+- **Longer Logs for Frozen Tabs** - Keep about four times as many log entries for a tab that stops responding, and say clearly when older entries were not saved.
+- **Shorter Debug Logs** - Record one line per search for an ad-free replacement stream instead of several lines for every stream checked, so logs reach further back.
+- **Exact Browser Version** - Show the browser's full version in debug logs and bug reports instead of the shortened one Chromium browsers report, and recognize Brave even when it presents itself as Chrome.
+
 ### v28.0.0 - 2026-11-26
 
 - **Error 4000 During Ad Breaks in Chromium Browsers** - Show the short silent hold when no ad-free replacement stream is ready, in Chrome, Edge, Brave, and other Chromium browsers on channels Twitch delivers as fragmented MP4 video, instead of stopping playback with a player error, such as error 4000, until the ads ended, even after refreshing the page. ([#107](https://github.com/GosuDRM/TTV-AB/issues/107))
@@ -86,16 +97,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v27.0.2 - 2026-11-20
 
 - **Bottom Promotion Banners** - Hide the promotion banners Twitch shows along the bottom of the page, such as the GTA VI banner, and the GTA VI animation that crosses the bottom of the screen every 10 to 30 minutes, while ad blocking is on. Terms of service and cookie prompts stay visible.
-
-### v27.0.1 - 2026-11-19
-
-- **Ad Break Checks After a Player Error** - Give Twitch's player the stream access type it missed when it keeps playing after an internal error, so its checks for the end of an ad break match the stream instead of using an older or default type.
-- **HD Replacement Diagnostics** - Say in debug logs that an ad-free HD replacement stream could not join through a low-latency segment, instead of saying it listed none when it did.
-- **Low Quality After Some Ad Breaks** - Keep all of the stream's qualities when Twitch's small picture-by-picture player next to an ad loads before the main player, instead of restoring the stream after the break with only 360p and 160p available, which left it at 360p.
-- **Failed Stream Requests During Ad Breaks** - Keep the player on the ad-free replacement stream when it asks for an update before the replacement has a new segment, instead of failing that request.
-- **Ad Break Diagnostics** - Record in debug logs the first stream request that fails or is cancelled during each ad break, and how many of Twitch's ad-marked playlists and rejected HD replacement streams contained actual ad segments, to help track down breaks that stay at low quality.
-- **Consistent Stream Switching Rules** - Keep each timing rule for switching between Twitch's stream and the ad-free replacement stream in one place, so a future update cannot change one use of it and miss another. Playback is unchanged.
-- **Consistent Channel Statistics** - Check during every build that the popup and the extension count channel statistics the same way, so a future update cannot make the popup's channel list disagree with saved statistics.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
