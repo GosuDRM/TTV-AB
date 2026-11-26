@@ -82,6 +82,105 @@ describe("popup log formatting", () => {
 		).toBe(expected);
 	});
 
+	it("reports the full browser version instead of the reduced user agent version", () => {
+		const browser = T<(value: unknown, fullVersionList?: unknown) => string>(
+			"_getLogExportBrowser",
+		);
+		const chrome = {
+			userAgent: "Mozilla/5.0 Chrome/158.0.0.0 Safari/537.36",
+			userAgentData: {
+				brands: [
+					{ brand: "Chromium", version: "158" },
+					{ brand: "Google Chrome", version: "158" },
+				],
+			},
+		};
+		expect(browser(chrome)).toBe("Google Chrome 158.0.0.0");
+		expect(
+			browser(chrome, [
+				{ brand: "Chromium", version: "158.0.8127.88" },
+				{ brand: "Not.A/Brand", version: "24.0.0.0" },
+				{ brand: "Google Chrome", version: "158.0.8127.88" },
+			]),
+		).toBe("Google Chrome 158.0.8127.88");
+		expect(
+			browser(chrome, [
+				{ brand: "Google Chrome", version: "158.0.8127.88\nprivate" },
+			]),
+		).toBe("Google Chrome 158.0.0.0");
+		expect(browser(chrome, "158.0.8127.88")).toBe("Google Chrome 158.0.0.0");
+	});
+
+	it("identifies Brave by its own marker when its brand is missing", () => {
+		const browser = T<(value: unknown, fullVersionList?: unknown) => string>(
+			"_getLogExportBrowser",
+		);
+		const brave = {
+			userAgent: "Mozilla/5.0 Chrome/158.0.0.0 Safari/537.36",
+			userAgentData: {
+				brands: [
+					{ brand: "Chromium", version: "158" },
+					{ brand: "Google Chrome", version: "158" },
+				],
+			},
+			brave: { isBrave: async () => true },
+		};
+		expect(browser(brave)).toBe("Brave 158.0.0.0");
+		expect(
+			browser(brave, [
+				{ brand: "Chromium", version: "158.0.8127.88" },
+				{ brand: "Google Chrome", version: "158.0.8127.88" },
+			]),
+		).toBe("Brave 158.0.8127.88");
+		expect(browser({ ...brave, brave: {} })).toBe("Google Chrome 158.0.0.0");
+	});
+
+	it("asks only for the full version list and falls back when it never answers", async () => {
+		const browser = T<(value: unknown, timeoutMs?: number) => Promise<string>>(
+			"_getLogExportBrowserWithFullVersion",
+		);
+		const getHighEntropyValues = vi.fn(async () => ({
+			fullVersionList: [{ brand: "Google Chrome", version: "158.0.8127.88" }],
+		}));
+		const navigatorInfo = {
+			userAgent: "Mozilla/5.0 Chrome/158.0.0.0",
+			userAgentData: {
+				brands: [{ brand: "Google Chrome", version: "158" }],
+				getHighEntropyValues,
+			},
+		};
+		await expect(browser(navigatorInfo)).resolves.toBe(
+			"Google Chrome 158.0.8127.88",
+		);
+		expect(getHighEntropyValues).toHaveBeenCalledWith(["fullVersionList"]);
+		await expect(
+			browser(
+				{
+					...navigatorInfo,
+					userAgentData: {
+						...navigatorInfo.userAgentData,
+						getHighEntropyValues: () => new Promise(() => {}),
+					},
+				},
+				5,
+			),
+		).resolves.toBe("Google Chrome 158.0.0.0");
+		await expect(
+			browser({
+				...navigatorInfo,
+				userAgentData: {
+					...navigatorInfo.userAgentData,
+					getHighEntropyValues: () => {
+						throw new Error("blocked");
+					},
+				},
+			}),
+		).resolves.toBe("Google Chrome 158.0.0.0");
+		await expect(
+			browser({ userAgent: "Mozilla/5.0 Firefox/162.0" }),
+		).resolves.toBe("Firefox 162.0");
+	});
+
 	it("uses branded client hints without mistaking Brave for Chrome", () => {
 		const browser = T<(value: unknown) => string>("_getLogExportBrowser");
 		const userAgent = "Mozilla/5.0 Chrome/140.0.7339.80";

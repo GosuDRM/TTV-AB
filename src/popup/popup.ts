@@ -150,11 +150,17 @@ function _formatLogEntryLine(entry: PlainObject): string {
 		.join("\n");
 }
 
+type LogExportBrowserNavigator = {
+	userAgent?: string;
+	userAgentData?: LogExportUserAgentData & {
+		brands?: { brand: string; version: string }[];
+	};
+	brave?: { isBrave?: unknown };
+};
+
 function _getLogExportBrowser(
-	navigatorInfo: {
-		userAgent?: string;
-		userAgentData?: { brands?: { brand: string; version: string }[] };
-	} = navigator,
+	navigatorInfo: LogExportBrowserNavigator = navigator,
+	fullVersionList: unknown = null,
 ) {
 	try {
 		const userAgent = _sanitizeLogExportText(navigatorInfo.userAgent, 1024);
@@ -174,6 +180,24 @@ function _getLogExportBrowser(
 			/(?:Chrome|Chromium)\/([\d.]+)/,
 		)?.[1];
 		const brands = navigatorInfo.userAgentData?.brands;
+		const fullVersions = Array.isArray(fullVersionList)
+			? fullVersionList.slice(0, 16)
+			: [];
+		const getFullVersion = (name: string) => {
+			const version = fullVersions.find(
+				(entry) => entry?.brand === name,
+			)?.version;
+			return typeof version === "string" && /^\d+(?:\.\d+){1,5}$/.test(version)
+				? version
+				: null;
+		};
+		if (typeof navigatorInfo.brave?.isBrave === "function") {
+			const version =
+				getFullVersion("Brave") ??
+				getFullVersion("Chromium") ??
+				chromiumVersion;
+			if (version) return `Brave ${version.slice(0, 64)}`;
+		}
 		if (Array.isArray(brands)) {
 			for (const name of [
 				"Microsoft Edge",
@@ -189,9 +213,10 @@ function _getLogExportBrowser(
 					.find((entry) => entry?.brand === name);
 				if (!brand || !/^\d+(?:\.\d+){0,5}$/.test(brand.version)) continue;
 				const version =
-					(name === "Google Chrome" || name === "Chromium") && chromiumVersion
+					getFullVersion(name) ??
+					((name === "Google Chrome" || name === "Chromium") && chromiumVersion
 						? chromiumVersion
-						: brand.version;
+						: brand.version);
 				const label = name === "YaBrowser" ? "Yandex Browser" : name;
 				return `${label} ${version.slice(0, 64)}`;
 			}
@@ -206,6 +231,23 @@ type LogExportUserAgentData = {
 	platform?: string;
 	getHighEntropyValues?: (hints: string[]) => Promise<PlainObject>;
 };
+
+async function _getLogExportBrowserWithFullVersion(
+	navigatorInfo: LogExportBrowserNavigator = navigator,
+	timeoutMs = 1000,
+) {
+	const userAgentData = navigatorInfo?.userAgentData;
+	if (typeof userAgentData?.getHighEntropyValues !== "function")
+		return _getLogExportBrowser(navigatorInfo);
+	const values = await _awaitLogExportValue<PlainObject | null>(
+		Promise.resolve().then(() =>
+			userAgentData.getHighEntropyValues?.(["fullVersionList"]),
+		),
+		timeoutMs,
+		null,
+	);
+	return _getLogExportBrowser(navigatorInfo, values?.fullVersionList);
+}
 
 function _awaitLogExportValue<T>(
 	promise: Promise<T>,
@@ -930,18 +972,24 @@ async function _buildLogExport(
 ): Promise<string> {
 	const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
 	const exportedAt = new Date();
-	const [operatingSystem, decoderSupport, extensionSettings, siteAccess] =
-		await Promise.all([
-			_getLogExportOperatingSystem(),
-			_getLogExportDecoderSupport(),
-			_readLogExportExtensionSettings(),
-			_hasTwitchSiteAccess(),
-		]);
+	const [
+		browser,
+		operatingSystem,
+		decoderSupport,
+		extensionSettings,
+		siteAccess,
+	] = await Promise.all([
+		_getLogExportBrowserWithFullVersion(),
+		_getLogExportOperatingSystem(),
+		_getLogExportDecoderSupport(),
+		_readLogExportExtensionSettings(),
+		_hasTwitchSiteAccess(),
+	]);
 	if (isCancelled()) return "";
 	const headerLines = [
 		"TTV AB debug log",
 		`Version: ${manifestVersion}`,
-		`Browser: ${_getLogExportBrowser()}`,
+		`Browser: ${browser}`,
 		`OS: ${operatingSystem}`,
 		`Decoder support: ${decoderSupport}`,
 		`Extension settings: ${extensionSettings}`,
@@ -2120,6 +2168,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	};
 	void _getLogExportOperatingSystem().then((os) => {
 		issueEnvironment = { ...issueEnvironment, os };
+	});
+	void _getLogExportBrowserWithFullVersion().then((browser) => {
+		issueEnvironment = { ...issueEnvironment, browser };
 	});
 
 	function openIssuesPage() {
