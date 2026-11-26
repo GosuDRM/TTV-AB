@@ -851,8 +851,10 @@ describe("HD backup probation through playlist polling", () => {
 			const log = vi.fn();
 			f.context._log = log;
 			const siteChecks = () =>
-				log.mock.calls.filter(
-					([message]) => message === "[Trace] Checking: site",
+				log.mock.calls.filter(([message]) =>
+					/^\[Trace\] Backup search [\d.]+s: checked (?:[a-z_]+, )*site\b/.test(
+						String(message),
+					),
 				).length;
 			const originalFetch = f.fetch.getMockImplementation();
 			let siteAdMarked = true;
@@ -921,9 +923,12 @@ describe("HD backup probation through playlist polling", () => {
 			"[Trace] Backup search order: site (cooling 12s), autoplay",
 			"info",
 		);
-		expect(
-			log.mock.calls.some(([message]) => message === "[Trace] Checking: site"),
-		).toBe(false);
+		expect(log).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^\[Trace\] Backup search [\d.]+s: checked autoplay; using autoplay$/,
+			),
+			"info",
+		);
 	});
 
 	it("starts the first HD check early enough to promote when the autoplay dwell ends", async () => {

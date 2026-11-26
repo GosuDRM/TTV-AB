@@ -3605,6 +3605,80 @@ function _getNativePlaylistReturnBlocker(
 	}
 }
 
+const _ServedPlaylistReports = new WeakMap<
+	object,
+	{
+		served: "native" | "backup" | "hold";
+		source: string;
+		container: string;
+		catalog: string;
+		since: number;
+	}
+>();
+
+function _describeStreamCatalog(info: Partial<TTVABStreamInfo>) {
+	const families = [];
+	const names = [];
+	for (const variant of Array.isArray(info?.ResolutionList)
+		? info.ResolutionList
+		: []) {
+		if (!variant || variant.Resolution === "0x0") continue;
+		const family = _getVideoCodecFamily(variant.Codecs);
+		const familyName = family ? family.toUpperCase() : "unknown codec";
+		if (!families.includes(familyName)) families.push(familyName);
+		const name = String(variant.Name || variant.Resolution || "")
+			.replace(/[^\w.+-]/g, "")
+			.slice(0, 16);
+		if (name && !names.includes(name) && names.length < 8) names.push(name);
+	}
+	if (families.length === 0) return "";
+	return `${families.length === 1 ? `${families[0]} only` : families.join(" + ")}: ${names.join(", ")}`;
+}
+
+function _getServedPlaylistReport(info: Partial<TTVABStreamInfo>) {
+	return info ? _ServedPlaylistReports.get(info) || null : null;
+}
+
+function _recordServedPlaylist(
+	info: Partial<TTVABStreamInfo>,
+	output,
+	backupMetadata = null,
+) {
+	try {
+		const served = info?._LastServedPlaylistKind;
+		if (
+			info?.MediaType !== "live" ||
+			typeof output !== "string" ||
+			(served !== "hold" && served !== "backup" && served !== "native")
+		)
+			return false;
+		const source =
+			served === "backup"
+				? `${String(backupMetadata?.playerType || "backup").slice(0, 24)} ${String(backupMetadata?.resolution || "unknown").slice(0, 16)}`
+				: served;
+		const container = /(?:^|\n)\s*#EXT-X-MAP:/.test(output)
+			? "fragmented MP4"
+			: "transport stream";
+		const previous = _ServedPlaylistReports.get(info);
+		if (
+			previous?.served === served &&
+			previous.source === source &&
+			previous.container === container
+		)
+			return false;
+		_ServedPlaylistReports.set(info, {
+			served,
+			source,
+			container,
+			catalog: _describeStreamCatalog(info),
+			since: Date.now(),
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function _applyPlaylistContinuity(
 	info: Partial<TTVABStreamInfo>,
 	url,
@@ -3736,6 +3810,7 @@ function _applyPlaylistContinuity(
 					: "native";
 		if (info && info._LastServedPlaylistKind !== "hold")
 			info._EmptyAdHoldWindow = null;
+		_recordServedPlaylist(info, output, backupMetadata);
 		if (
 			info?.MediaType === "live" &&
 			(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
@@ -6427,6 +6502,7 @@ async function _processM3U8(
 }
 
 const _BreakRequestFailureLogs = new WeakMap<object, number>();
+const _PostBreakRequestFailureLogs = new WeakMap<object, number>();
 
 function _logFirstBreakRequestFailure(
 	info: TTVABStreamInfo | null,
@@ -6438,13 +6514,9 @@ function _logFirstBreakRequestFailure(
 	if (
 		error?.name !== "AbortError" ||
 		info?.MediaType !== "live" ||
-		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
-		cycleStartedAt <= 0 ||
-		!(info.IsShowingAd || info.IsHoldingBackupAfterAd) ||
-		_BreakRequestFailureLogs.get(info) === cycleStartedAt
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true
 	)
 		return;
-	_BreakRequestFailureLogs.set(info, cycleStartedAt);
 	const now = Date.now();
 	const outcome = requestSignal?.aborted
 		? "cancelled by the player"
@@ -6453,6 +6525,28 @@ function _logFirstBreakRequestFailure(
 					? _PLAYLIST_CONTINUITY_REFUSAL_REASONS[error.message]
 					: error.message
 			})`;
+	const endedAt = Math.max(0, Number(info.LastAdEndReloadAt) || 0);
+	if (
+		!info.IsShowingAd &&
+		!info.IsHoldingBackupAfterAd &&
+		endedAt > 0 &&
+		now - endedAt <= 60000
+	) {
+		if (_PostBreakRequestFailureLogs.get(info) === endedAt) return;
+		_PostBreakRequestFailureLogs.set(info, endedAt);
+		_log(
+			`[Continuity] first playlist request after the break ${outcome} ${((now - endedAt) / 1000).toFixed(1)}s after it ended after ${((now - startedAt) / 1000).toFixed(1)}s for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}`,
+			"warning",
+		);
+		return;
+	}
+	if (
+		cycleStartedAt <= 0 ||
+		!(info.IsShowingAd || info.IsHoldingBackupAfterAd) ||
+		_BreakRequestFailureLogs.get(info) === cycleStartedAt
+	)
+		return;
+	_BreakRequestFailureLogs.set(info, cycleStartedAt);
 	_log(
 		`[Continuity] first ad-break playlist request ${outcome} ${((now - cycleStartedAt) / 1000).toFixed(1)}s into the break after ${((now - startedAt) / 1000).toFixed(1)}s (serving ${info._LastServedPlaylistKind || "nothing yet"}) for ${_normalizeMediaKey(info.MediaKey) || "unknown media"}`,
 		"warning",
@@ -10192,6 +10286,7 @@ async function _searchBackupStream(
 		if (!earlyRetry) _markBackupPlayerRetryCooldown(info, playerType, reason);
 	};
 	const searchStartedAt = Date.now();
+	const checkedTypes: string[] = [];
 	const stopSearch = (): TTVABBackupSearchResult => {
 		if (!earlyRetry) {
 			const reason = searchDeadlineExceeded()
@@ -10398,7 +10493,9 @@ async function _searchBackupStream(
 				"autoplay",
 				...passPlayerTypes.filter((pt) => pt !== "autoplay"),
 			];
-			_log(
+			_logOncePerAdBreak(
+				info,
+				"lq-autoplay-first",
 				"[Trace] LQ autoplay prioritized first for fast clean first-frame (seamless LQ→HQ hold)",
 				"info",
 			);
@@ -10505,7 +10602,7 @@ async function _searchBackupStream(
 				foregroundQualityProbeAttempted = true;
 				info._ForegroundQualityProbeAppliedAt = foregroundQualityProbeAt;
 			}
-			_log(`[Trace] Checking: ${pt}`, "debug");
+			if (checkedTypes.length < 16) checkedTypes.push(pt);
 			const typeBudgetAt = Date.now() + _BACKUP_CANDIDATE_ATTEMPT_BUDGET_MS;
 			const typeDeadlineAt =
 				probeDeadlineAt > 0
@@ -11277,6 +11374,11 @@ async function _searchBackupStream(
 		}
 		info._NoBackupRecoveryCandidates?.clear?.();
 	}
+	if (!earlyRetry && checkedTypes.length > 0)
+		_log(
+			`[Trace] Backup search ${((Date.now() - searchStartedAt) / 1000).toFixed(1)}s: checked ${checkedTypes.join(", ")}; ${backupM3u8 ? `using ${backupType}` : "no clean source"}`,
+			"info",
+		);
 
 	return { type: backupType, m3u8: backupM3u8 };
 }

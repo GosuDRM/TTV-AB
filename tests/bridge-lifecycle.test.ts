@@ -336,6 +336,62 @@ describe("pre-freeze diagnostic forwarding", () => {
 		expect(media.lowLatencySource).toBeNull();
 	});
 
+	it("sanitizes the served stream summary and the last video error", () => {
+		const sanitize = g.sanitizeLogContext as (
+			value: unknown,
+		) => Record<string, Record<string, unknown> | null>;
+		const context = sanitize({
+			pageUrl: "https://www.twitch.tv/example",
+			serving: {
+				served: "hold",
+				source: "s".repeat(200),
+				container: "fragmented MP4",
+				catalog: "AVC only: 1080p60",
+				since: 1000,
+				extra: "dropped",
+			},
+			media: { lastError: { code: 9, message: "m".repeat(1000), at: 1000 } },
+		});
+		expect(context.serving).toEqual({
+			served: "hold",
+			source: "s".repeat(48),
+			container: "fragmented MP4",
+			catalog: "AVC only: 1080p60",
+			since: 1000,
+		});
+		expect(context.media?.lastError).toEqual({
+			code: 4,
+			message: "m".repeat(300),
+			at: 1000,
+		});
+		expect(
+			sanitize({
+				pageUrl: "https://www.twitch.tv/example",
+				serving: { served: "ad" },
+			}).serving,
+		).toBeNull();
+	});
+
+	it("tags every forwarded snapshot from this page load with the same load id", () => {
+		const forward = () =>
+			handlePageMessage({
+				type: "ttvab-diagnostic-checkpoint",
+				detail: {
+					capturedAt: Date.now(),
+					entries: [{ t: Date.now(), l: "info", m: "entry" }],
+					context: { pageUrl: "https://www.twitch.tv/example" },
+				},
+			});
+		forward();
+		forward();
+		const forwarded = runtimeMessages
+			.filter((message) => message?.type === "ttvab-diagnostic-checkpoint")
+			.slice(-2)
+			.map((message) => (message.detail as { loadId?: string }).loadId);
+		expect(forwarded[0]).toMatch(/^load:[0-9a-f]+:[0-9a-f]{24}$/);
+		expect(forwarded[1]).toBe(forwarded[0]);
+	});
+
 	it("bounds both entries and failure history by bytes before forwarding", () => {
 		handlePageMessage({
 			type: "ttvab-diagnostic-checkpoint",

@@ -80,10 +80,11 @@ describe("bounded diagnostic checkpoints", () => {
 		expect(checkpoint()).toBe(false);
 		const send = g._sendBridgeMessage as ReturnType<typeof vi.fn>;
 		const detail = send.mock.calls[0][1];
-		expect(detail.entries.length).toBeLessThanOrEqual(64);
+		expect(detail.entries.length).toBeLessThanOrEqual(256);
+		expect(detail.entries.length).toBeGreaterThan(5);
 		expect(
 			new TextEncoder().encode(JSON.stringify(detail.entries)).byteLength,
-		).toBeLessThanOrEqual(24 * 1024);
+		).toBeLessThanOrEqual(40 * 1024);
 		expect(detail.entries.at(-1).t).toBe(1000);
 		vi.advanceTimersByTime(15000);
 		expect(checkpoint()).toBe(false);
@@ -136,7 +137,7 @@ describe("bounded diagnostic checkpoints", () => {
 		];
 		g.__TTVAB_LOGS__ = [
 			...milestones.map((m, i) => ({ t: i + 1, l: "info", m })),
-			...Array.from({ length: 100 }, (_, i) => ({
+			...Array.from({ length: 400 }, (_, i) => ({
 				t: i + 5,
 				l: "info",
 				m: "Resuming paused player after ad",
@@ -145,14 +146,14 @@ describe("bounded diagnostic checkpoints", () => {
 		T<(force?: boolean) => boolean>("_checkpointPageDiagnostics")(true);
 		const detail = (g._sendBridgeMessage as ReturnType<typeof vi.fn>).mock
 			.calls[0][1];
-		expect(detail.entries).toHaveLength(64);
+		expect(detail.entries).toHaveLength(256);
 		expect(detail.entries.map((entry: { m: string }) => entry.m)).toEqual(
 			expect.arrayContaining(milestones),
 		);
-		expect(detail.entries.at(-1).t).toBe(104);
+		expect(detail.entries.at(-1).t).toBe(404);
 		expect(
 			new TextEncoder().encode(JSON.stringify(detail.entries)).byteLength,
-		).toBeLessThanOrEqual(24 * 1024);
+		).toBeLessThanOrEqual(40 * 1024);
 	});
 
 	it("keeps the newest sample and honors small byte and entry limits with oversized milestones", () => {

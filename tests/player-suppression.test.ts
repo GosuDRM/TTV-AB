@@ -1,4 +1,12 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import { loadModule, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
@@ -2278,6 +2286,90 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		isPaused = true;
 		video.dispatchEvent(new Event("pause"));
 	}
+
+	it("logs the primary video's own error once and keeps the latest for the log export", () => {
+		const errorState = g._PrimaryMediaErrorState as {
+			last: unknown;
+			logCount: number;
+		};
+		errorState.last = null;
+		errorState.logCount = 0;
+		const logs: string[] = [];
+		const originalLog = g._log;
+		g._log = (message: string) => logs.push(message);
+		let error: { code: number; message: string } | null = {
+			code: 4,
+			message:
+				"CHUNK_DEMUXER_ERROR_APPEND_FAILED https://video.example/seg.ts?token=secret",
+		};
+		Object.defineProperty(video, "error", {
+			get: () => error,
+			configurable: true,
+		});
+		try {
+			video.dispatchEvent(new Event("error"));
+			video.dispatchEvent(new Event("error"));
+			expect(logs).toHaveLength(1);
+			expect(logs[0]).toMatch(
+				/^\[Recovery\] Video error 4 \(format not supported\): CHUNK_DEMUXER_ERROR_APPEND_FAILED .*; ready 0, network 0, time 0\.0, outside an ad break$/,
+			);
+			expect(logs[0]).not.toContain("secret");
+			expect(errorState.last).toMatchObject({
+				mediaKey: "live:testchannel",
+				code: 4,
+			});
+			error = { code: 3, message: "" };
+			(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+				"live:testchannel";
+			video.dispatchEvent(new Event("error"));
+			expect(logs[1]).toBe(
+				"[Recovery] Video error 3 (decode error); ready 0, network 0, time 0.0, during an ad break",
+			);
+			error = null;
+			video.dispatchEvent(new Event("error"));
+			expect(logs).toHaveLength(2);
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+				"live:otherchannel";
+			error = { code: 2, message: "network" };
+			video.dispatchEvent(new Event("error"));
+			expect(logs).toHaveLength(2);
+		} finally {
+			g._log = originalLog;
+			delete (video as unknown as Record<string, unknown>).error;
+		}
+	});
+
+	it("logs a refused play once per reason and ignores interrupted plays", async () => {
+		const logs: string[] = [];
+		const originalLog = g._log;
+		g._log = (message: string) => logs.push(message);
+		const refuse = (name: string) =>
+			Object.assign(new Error(`${name} reason`), { name });
+		const target = {
+			play: vi.fn(),
+		};
+		try {
+			for (const name of [
+				"NotAllowedError",
+				"NotAllowedError",
+				"AbortError",
+				"NotSupportedError",
+			]) {
+				target.play.mockReturnValueOnce(Promise.reject(refuse(name)));
+				expect(T<(t: unknown) => boolean>("_playPlaybackTarget")(target)).toBe(
+					true,
+				);
+			}
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(logs).toEqual([
+				"[Recovery] The browser refused to play the video (NotAllowedError: NotAllowedError reason)",
+				"[Recovery] The browser refused to play the video (NotSupportedError: NotSupportedError reason)",
+			]);
+		} finally {
+			g._log = originalLog;
+		}
+	});
 
 	it("recovers a late environmental pause without recording user intent", () => {
 		pause();

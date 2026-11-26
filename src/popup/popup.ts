@@ -592,6 +592,25 @@ function _formatLogContextLines(value): string[] {
 			`Worker failures: ${_stringifyLogExportValue(context.workerFailures, 32000)}`,
 		);
 	}
+	const serving = context.serving as PlainObject | null;
+	if (
+		serving &&
+		typeof serving === "object" &&
+		["native", "backup", "hold"].includes(serving.served as string)
+	) {
+		const servedLabel =
+			serving.served === "hold"
+				? "silent hold (no ad-free stream available)"
+				: serving.served === "backup"
+					? `ad-free replacement ${_sanitizeLogExportText(serving.source, 48)}`
+					: "Twitch's own stream";
+		const container = _sanitizeLogExportText(serving.container, 24);
+		lines.push(
+			`Serving: ${servedLabel} since ${_formatLogExportTimestamp(serving.since)}${container ? ` (${container})` : ""}`,
+		);
+		const catalog = _sanitizeLogExportText(serving.catalog, 160);
+		if (catalog) lines.push(`Stream qualities: ${catalog}`);
+	}
 	if (context.media && typeof context.media === "object") {
 		lines.push(`Media state: ${_stringifyLogExportValue(context.media)}`);
 	}
@@ -649,6 +668,7 @@ function _queryTwitchTabs(
 function _getTabDiagnosticCheckpoint(
 	tabId,
 	pageUrl,
+	previous = false,
 ): Promise<PlainObject | null> {
 	return new Promise((resolve) => {
 		let settled = false;
@@ -661,7 +681,10 @@ function _getTabDiagnosticCheckpoint(
 		const timer = setTimeout(() => finish(null), 1500);
 		try {
 			chrome.runtime.sendMessage(
-				{ type: "ttvab-get-diagnostic-checkpoint", detail: { tabId, pageUrl } },
+				{
+					type: "ttvab-get-diagnostic-checkpoint",
+					detail: { tabId, pageUrl, ...(previous ? { previous: true } : {}) },
+				},
 				(response) => {
 					const checkpoint = response?.checkpoint;
 					if (
@@ -673,8 +696,9 @@ function _getTabDiagnosticCheckpoint(
 						checkpoint.capturedAt <= 0 ||
 						checkpoint.capturedAt > Date.now() ||
 						Date.now() - checkpoint.capturedAt > 30 * 60 * 1000 ||
-						_sanitizeLogExportTabUrl(checkpoint.context?.pageUrl) !==
-							_sanitizeLogExportTabUrl(pageUrl)
+						(!previous &&
+							_sanitizeLogExportTabUrl(checkpoint.context?.pageUrl) !==
+								_sanitizeLogExportTabUrl(pageUrl))
 					) {
 						finish(null);
 						return;
@@ -686,6 +710,29 @@ function _getTabDiagnosticCheckpoint(
 			finish(null);
 		}
 	});
+}
+
+function _getCheckpointLogResult(
+	checkpoint: PlainObject,
+	error: string | null,
+): LogCollectionResult {
+	return {
+		entries: Array.isArray(checkpoint.entries)
+			? (checkpoint.entries as PlainObject[]).slice(-256)
+			: [],
+		context: checkpoint.context as PlainObject,
+		error,
+		truncatedEntries: Number(checkpoint.truncatedEntries) || 0,
+		cachedAt: Number(checkpoint.capturedAt),
+	};
+}
+
+async function _getPreviousPageLoadLogResult(
+	tab: chrome.tabs.Tab,
+): Promise<LogCollectionResult | null> {
+	if (typeof tab?.id !== "number" || !tab.url) return null;
+	const checkpoint = await _getTabDiagnosticCheckpoint(tab.id, tab.url, true);
+	return checkpoint ? _getCheckpointLogResult(checkpoint, null) : null;
 }
 
 function _collectTabLogEntries(
@@ -710,15 +757,7 @@ function _collectTabLogEntries(
 				: null;
 			resolve(
 				checkpoint
-					? {
-							entries: Array.isArray(checkpoint.entries)
-								? checkpoint.entries.slice(-64)
-								: [],
-							context: checkpoint.context as PlainObject,
-							error,
-							truncatedEntries: Number(checkpoint.truncatedEntries) || 0,
-							cachedAt: Number(checkpoint.capturedAt),
-						}
+					? _getCheckpointLogResult(checkpoint, error)
 					: { entries: [], context: null, error, truncatedEntries: 0 },
 			);
 		};
@@ -789,13 +828,14 @@ function _buildTabLogSection(
 	index: number,
 	result: LogCollectionResult,
 	maxCharacters: number,
+	beforeReload = false,
 ) {
 	const collectedPageUrl =
 		typeof result.context?.pageUrl === "string"
 			? result.context.pageUrl
 			: tab.url;
 	const lines = [
-		`==== Tab ${index + 1}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
+		`==== Tab ${index + 1}${beforeReload ? " before its last reload" : ""}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
 		...(result.cachedAt
 			? [
 					`Last recorded snapshot: ${_formatLogExportTimestamp(result.cachedAt)} (cached before collection; not live state)`,
@@ -811,7 +851,7 @@ function _buildTabLogSection(
 			`(collection failed: ${_describeLogCollectionError(result.error)})`,
 		);
 	}
-	const tabHint = _getLogExportTabHint(tab, result.error);
+	const tabHint = beforeReload ? null : _getLogExportTabHint(tab, result.error);
 	if (tabHint) lines.push(`(${tabHint})`);
 	if (result.entries.length === 0 && !result.error) {
 		lines.push("(no TTV AB log entries captured in this tab)");
@@ -830,7 +870,9 @@ function _buildTabLogSection(
 	}
 	const omissionNote = (count: number) =>
 		count > 0
-			? `(${count} older log entries omitted by the export size limit)\n`
+			? result.cachedAt
+				? `(${count} older log entries are not in this saved snapshot)\n`
+				: `(${count} older log entries omitted by the export size limit)\n`
 			: "";
 	const previousOmissions = Math.max(
 		0,
@@ -951,15 +993,18 @@ async function _buildLogExport(
 			batchStart,
 			batchStart + _LOG_EXPORT_BATCH_SIZE,
 		);
-		const results = await Promise.all(
-			batch.map((tab) =>
-				_collectTabLogEntries(
-					tab.id as number,
-					_LOG_COLLECT_TAB_TIMEOUT_MS,
-					tab.url,
+		const [results, previousResults] = await Promise.all([
+			Promise.all(
+				batch.map((tab) =>
+					_collectTabLogEntries(
+						tab.id as number,
+						_LOG_COLLECT_TAB_TIMEOUT_MS,
+						tab.url,
+					),
 				),
 			),
-		);
+			Promise.all(batch.map((tab) => _getPreviousPageLoadLogResult(tab))),
+		]);
 		if (isCancelled()) break;
 		for (let offset = 0; offset < batch.length; offset += 1) {
 			const remaining = _LOG_EXPORT_MAX_CHARACTERS - usedCharacters - 1;
@@ -978,6 +1023,23 @@ async function _buildLogExport(
 			if (section.truncated) {
 				stoppedAt = batchStart + offset + 1;
 				break;
+			}
+			const previous = previousResults[offset];
+			const previousRemaining = _LOG_EXPORT_MAX_CHARACTERS - usedCharacters - 1;
+			if (previous && previousRemaining > 0) {
+				const previousSection = _buildTabLogSection(
+					batch[offset],
+					batchStart + offset,
+					previous,
+					previousRemaining,
+					true,
+				);
+				parts.push(previousSection.text);
+				usedCharacters += previousSection.text.length + 1;
+				if (previousSection.truncated) {
+					stoppedAt = batchStart + offset + 1;
+					break;
+				}
 			}
 		}
 		if (stoppedAt < selected.tabs.length) break;

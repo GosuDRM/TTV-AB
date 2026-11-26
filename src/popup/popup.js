@@ -454,6 +454,21 @@ function _formatLogContextLines(value) {
         context.workerFailures.length > 0) {
         lines.push(`Worker failures: ${_stringifyLogExportValue(context.workerFailures, 32000)}`);
     }
+    const serving = context.serving;
+    if (serving &&
+        typeof serving === "object" &&
+        ["native", "backup", "hold"].includes(serving.served)) {
+        const servedLabel = serving.served === "hold"
+            ? "silent hold (no ad-free stream available)"
+            : serving.served === "backup"
+                ? `ad-free replacement ${_sanitizeLogExportText(serving.source, 48)}`
+                : "Twitch's own stream";
+        const container = _sanitizeLogExportText(serving.container, 24);
+        lines.push(`Serving: ${servedLabel} since ${_formatLogExportTimestamp(serving.since)}${container ? ` (${container})` : ""}`);
+        const catalog = _sanitizeLogExportText(serving.catalog, 160);
+        if (catalog)
+            lines.push(`Stream qualities: ${catalog}`);
+    }
     if (context.media && typeof context.media === "object") {
         lines.push(`Media state: ${_stringifyLogExportValue(context.media)}`);
     }
@@ -500,7 +515,7 @@ function _queryTwitchTabs(timeoutMs = _LOG_QUERY_TABS_TIMEOUT_MS) {
         }
     });
 }
-function _getTabDiagnosticCheckpoint(tabId, pageUrl) {
+function _getTabDiagnosticCheckpoint(tabId, pageUrl, previous = false) {
     return new Promise((resolve) => {
         let settled = false;
         const finish = (value) => {
@@ -512,7 +527,10 @@ function _getTabDiagnosticCheckpoint(tabId, pageUrl) {
         };
         const timer = setTimeout(() => finish(null), 1500);
         try {
-            chrome.runtime.sendMessage({ type: "ttvab-get-diagnostic-checkpoint", detail: { tabId, pageUrl } }, (response) => {
+            chrome.runtime.sendMessage({
+                type: "ttvab-get-diagnostic-checkpoint",
+                detail: { tabId, pageUrl, ...(previous ? { previous: true } : {}) },
+            }, (response) => {
                 const checkpoint = response?.checkpoint;
                 if (chrome.runtime.lastError ||
                     response?.ok !== true ||
@@ -522,8 +540,9 @@ function _getTabDiagnosticCheckpoint(tabId, pageUrl) {
                     checkpoint.capturedAt <= 0 ||
                     checkpoint.capturedAt > Date.now() ||
                     Date.now() - checkpoint.capturedAt > 30 * 60 * 1000 ||
-                    _sanitizeLogExportTabUrl(checkpoint.context?.pageUrl) !==
-                        _sanitizeLogExportTabUrl(pageUrl)) {
+                    (!previous &&
+                        _sanitizeLogExportTabUrl(checkpoint.context?.pageUrl) !==
+                            _sanitizeLogExportTabUrl(pageUrl))) {
                     finish(null);
                     return;
                 }
@@ -534,6 +553,23 @@ function _getTabDiagnosticCheckpoint(tabId, pageUrl) {
             finish(null);
         }
     });
+}
+function _getCheckpointLogResult(checkpoint, error) {
+    return {
+        entries: Array.isArray(checkpoint.entries)
+            ? checkpoint.entries.slice(-256)
+            : [],
+        context: checkpoint.context,
+        error,
+        truncatedEntries: Number(checkpoint.truncatedEntries) || 0,
+        cachedAt: Number(checkpoint.capturedAt),
+    };
+}
+async function _getPreviousPageLoadLogResult(tab) {
+    if (typeof tab?.id !== "number" || !tab.url)
+        return null;
+    const checkpoint = await _getTabDiagnosticCheckpoint(tab.id, tab.url, true);
+    return checkpoint ? _getCheckpointLogResult(checkpoint, null) : null;
 }
 function _collectTabLogEntries(tabId, timeoutMs = _LOG_COLLECT_TAB_TIMEOUT_MS, pageUrl = null) {
     return new Promise((resolve) => {
@@ -554,15 +590,7 @@ function _collectTabLogEntries(tabId, timeoutMs = _LOG_COLLECT_TAB_TIMEOUT_MS, p
                 ? await _getTabDiagnosticCheckpoint(tabId, pageUrl)
                 : null;
             resolve(checkpoint
-                ? {
-                    entries: Array.isArray(checkpoint.entries)
-                        ? checkpoint.entries.slice(-64)
-                        : [],
-                    context: checkpoint.context,
-                    error,
-                    truncatedEntries: Number(checkpoint.truncatedEntries) || 0,
-                    cachedAt: Number(checkpoint.capturedAt),
-                }
+                ? _getCheckpointLogResult(checkpoint, error)
                 : { entries: [], context: null, error, truncatedEntries: 0 });
         };
         const timer = setTimeout(() => fail("extension-response-timeout"), Math.max(0, timeoutMs));
@@ -615,12 +643,12 @@ function _selectLogExportTabs(tabs, maxTabs = _LOG_EXPORT_MAX_TABS) {
         omittedTabs: Math.max(0, withIds.length - safeMaxTabs),
     };
 }
-function _buildTabLogSection(tab, index, result, maxCharacters) {
+function _buildTabLogSection(tab, index, result, maxCharacters, beforeReload = false) {
     const collectedPageUrl = typeof result.context?.pageUrl === "string"
         ? result.context.pageUrl
         : tab.url;
     const lines = [
-        `==== Tab ${index + 1}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
+        `==== Tab ${index + 1}${beforeReload ? " before its last reload" : ""}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
         ...(result.cachedAt
             ? [
                 `Last recorded snapshot: ${_formatLogExportTimestamp(result.cachedAt)} (cached before collection; not live state)`,
@@ -634,7 +662,7 @@ function _buildTabLogSection(tab, index, result, maxCharacters) {
     if (result.error) {
         lines.push(`(collection failed: ${_describeLogCollectionError(result.error)})`);
     }
-    const tabHint = _getLogExportTabHint(tab, result.error);
+    const tabHint = beforeReload ? null : _getLogExportTabHint(tab, result.error);
     if (tabHint)
         lines.push(`(${tabHint})`);
     if (result.entries.length === 0 && !result.error) {
@@ -652,7 +680,9 @@ function _buildTabLogSection(tab, index, result, maxCharacters) {
         };
     }
     const omissionNote = (count) => count > 0
-        ? `(${count} older log entries omitted by the export size limit)\n`
+        ? result.cachedAt
+            ? `(${count} older log entries are not in this saved snapshot)\n`
+            : `(${count} older log entries omitted by the export size limit)\n`
         : "";
     const previousOmissions = Math.max(0, Math.trunc(result.truncatedEntries) || 0);
     const entryLines = [];
@@ -748,7 +778,10 @@ async function _buildLogExport(isCancelled = () => false) {
         if (isCancelled())
             break;
         const batch = selected.tabs.slice(batchStart, batchStart + _LOG_EXPORT_BATCH_SIZE);
-        const results = await Promise.all(batch.map((tab) => _collectTabLogEntries(tab.id, _LOG_COLLECT_TAB_TIMEOUT_MS, tab.url)));
+        const [results, previousResults] = await Promise.all([
+            Promise.all(batch.map((tab) => _collectTabLogEntries(tab.id, _LOG_COLLECT_TAB_TIMEOUT_MS, tab.url))),
+            Promise.all(batch.map((tab) => _getPreviousPageLoadLogResult(tab))),
+        ]);
         if (isCancelled())
             break;
         for (let offset = 0; offset < batch.length; offset += 1) {
@@ -763,6 +796,17 @@ async function _buildLogExport(isCancelled = () => false) {
             if (section.truncated) {
                 stoppedAt = batchStart + offset + 1;
                 break;
+            }
+            const previous = previousResults[offset];
+            const previousRemaining = _LOG_EXPORT_MAX_CHARACTERS - usedCharacters - 1;
+            if (previous && previousRemaining > 0) {
+                const previousSection = _buildTabLogSection(batch[offset], batchStart + offset, previous, previousRemaining, true);
+                parts.push(previousSection.text);
+                usedCharacters += previousSection.text.length + 1;
+                if (previousSection.truncated) {
+                    stoppedAt = batchStart + offset + 1;
+                    break;
+                }
             }
         }
         if (stoppedAt < selected.tabs.length)
