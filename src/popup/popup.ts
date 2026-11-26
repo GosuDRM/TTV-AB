@@ -1509,6 +1509,113 @@ function _keepFocusInDialog(overlay: HTMLElement) {
 	});
 }
 
+const _UPDATE_CHECK_STORAGE_KEY = "ttvUpdateCheck";
+const _UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const _UPDATE_CHECK_RETRY_MS = 30 * 60 * 1000;
+const _UPDATE_CHECK_TIMEOUT_MS = 5000;
+
+type StoreRelease = { latest: string; store: "chrome" | "firefox" };
+
+function _parseReleaseVersion(value: unknown): number[] | null {
+	const text = String(value ?? "").trim();
+	if (!/^\d{1,6}(?:\.\d{1,6}){0,3}$/.test(text)) return null;
+	return text.split(".").map(Number);
+}
+
+function _isNewerReleaseVersion(candidate: unknown, current: unknown) {
+	const next = _parseReleaseVersion(candidate);
+	const installed = _parseReleaseVersion(current);
+	if (!next || !installed) return false;
+	for (let i = 0; i < Math.max(next.length, installed.length); i++) {
+		const difference = (next[i] ?? 0) - (installed[i] ?? 0);
+		if (difference !== 0) return difference > 0;
+	}
+	return false;
+}
+
+function _getFirefoxAddonsRelease(payload, browserVersion: unknown) {
+	const release = payload?.current_version;
+	if (!_parseReleaseVersion(release?.version)) return null;
+	const minimum = release.compatibility?.firefox?.min;
+	if (
+		_parseReleaseVersion(browserVersion) &&
+		_isNewerReleaseVersion(minimum, browserVersion)
+	)
+		return null;
+	return String(release.version);
+}
+
+function _readStoredUpdateCheck(
+	value,
+	installedVersion: string,
+	now: number,
+): { release: StoreRelease | null; due: boolean } {
+	const record = value && typeof value === "object" ? value : {};
+	const release: StoreRelease | null =
+		(record.store === "chrome" || record.store === "firefox") &&
+		_parseReleaseVersion(record.latest)
+			? { latest: String(record.latest), store: record.store }
+			: null;
+	const isWithin = (at, windowMs: number) =>
+		Number.isFinite(at) && now - at >= 0 && now - at < windowMs;
+	const checkedRecently =
+		release !== null &&
+		record.installedVersion === installedVersion &&
+		isWithin(record.checkedAt, _UPDATE_CHECK_INTERVAL_MS);
+	return {
+		release,
+		due:
+			!checkedRecently && !isWithin(record.attemptedAt, _UPDATE_CHECK_RETRY_MS),
+	};
+}
+
+async function _checkStoreRelease(
+	runtime,
+	fetchImpl: typeof fetch = fetch,
+): Promise<StoreRelease | null> {
+	const installedVersion = runtime?.getManifest?.()?.version;
+	if (!_parseReleaseVersion(installedVersion)) return null;
+	if (typeof runtime.getBrowserInfo === "function") {
+		if (typeof runtime.id !== "string" || !runtime.id) return null;
+		const controller = new AbortController();
+		const timer = setTimeout(
+			() => controller.abort(),
+			_UPDATE_CHECK_TIMEOUT_MS,
+		);
+		try {
+			const response = await fetchImpl(
+				`https://addons.mozilla.org/api/v5/addons/addon/${encodeURIComponent(runtime.id)}/`,
+				{ credentials: "omit", signal: controller.signal },
+			);
+			if (!response.ok) return null;
+			const payload = await response.json();
+			const browserInfo = await runtime.getBrowserInfo();
+			return {
+				latest:
+					_getFirefoxAddonsRelease(payload, browserInfo?.version) ??
+					installedVersion,
+				store: "firefox",
+			};
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+	if (
+		typeof runtime.requestUpdateCheck !== "function" ||
+		!runtime.getManifest().update_url
+	)
+		return null;
+	const result = await runtime.requestUpdateCheck();
+	if (
+		result?.status === "update_available" &&
+		_parseReleaseVersion(result.version)
+	)
+		return { latest: String(result.version), store: "chrome" };
+	if (result?.status === "no_update")
+		return { latest: installedVersion, store: "chrome" };
+	return null;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	const isLogExportPage = _isLogExportPage();
 	document.documentElement.classList.toggle("log-export-page", isLogExportPage);
@@ -1583,6 +1690,24 @@ document.addEventListener("DOMContentLoaded", () => {
 	const versionText = document.getElementById(
 		"versionText",
 	) as HTMLElement | null;
+	const stableBadge = document.getElementById(
+		"stableBadge",
+	) as HTMLElement | null;
+	const updateBadge = document.getElementById(
+		"updateBadge",
+	) as HTMLButtonElement | null;
+	const updateTooltip = document.getElementById(
+		"updateTooltip",
+	) as HTMLElement | null;
+	const updateModalTitle = document.getElementById(
+		"updateModalTitle",
+	) as HTMLElement | null;
+	const updateModalText = document.getElementById(
+		"updateModalText",
+	) as HTMLElement | null;
+	const updateModalClose = document.getElementById(
+		"updateModalClose",
+	) as HTMLButtonElement | null;
 	const achievementsTitle = document.getElementById(
 		"achievementsTitle",
 	) as HTMLElement | null;
@@ -1770,6 +1895,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		langAutoOption,
 		descriptionText,
 		versionText,
+		stableBadge,
+		updateBadge,
+		updateTooltip,
+		updateModalTitle,
+		updateModalText,
+		updateModalClose,
 		achievementsTitle,
 		footerText,
 		infoText,
@@ -1834,6 +1965,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		return;
 	}
 
+	let storeRelease: StoreRelease | null = null;
 	let turboModeEnabled = false;
 	let turboModeReady = false;
 	let statisticsReadGeneration = 0;
@@ -2158,6 +2290,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		statsResetButton.title = resetLabel;
 		statsResetButton.setAttribute("aria-label", resetLabel);
 		updateTurboCopy(t);
+		renderUpdateNotice();
 	}
 
 	let issueEnvironment = {
@@ -2191,6 +2324,95 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 		} catch {}
 		window.open(issuesUrl, "_blank", "noopener,noreferrer");
+	}
+
+	function renderUpdateNotice() {
+		const release = storeRelease;
+		const available = Boolean(
+			release &&
+				_isNewerReleaseVersion(
+					release.latest,
+					chrome.runtime?.getManifest?.()?.version,
+				),
+		);
+		stableBadge.hidden = available;
+		updateBadge.hidden = !available;
+		if (!release || !available) return;
+		const t = getTranslations();
+		updateModalTitle.textContent = formatTemplate(
+			String(t.updateTitle ?? "Version {version} is available"),
+			{ version: release.latest },
+		);
+		updateModalText.textContent = String(
+			(release.store === "firefox"
+				? t.updateFirefoxDetails
+				: t.updateChromeDetails) ?? "",
+		);
+	}
+
+	function readStoredUpdateCheck() {
+		return new Promise((resolve) => {
+			try {
+				chrome.storage.local.get(_UPDATE_CHECK_STORAGE_KEY, (items) => {
+					resolve(
+						chrome.runtime.lastError
+							? null
+							: items?.[_UPDATE_CHECK_STORAGE_KEY],
+					);
+				});
+			} catch {
+				resolve(null);
+			}
+		});
+	}
+
+	function writeStoredUpdateCheck(record: PlainObject) {
+		try {
+			chrome.storage.local.set(
+				{ [_UPDATE_CHECK_STORAGE_KEY]: record },
+				() => void chrome.runtime.lastError,
+			);
+		} catch {}
+	}
+
+	async function refreshStoreRelease() {
+		const installedVersion = chrome.runtime?.getManifest?.()?.version;
+		if (!installedVersion) return;
+		try {
+			const stored = await readStoredUpdateCheck();
+			const { release: cached, due } = _readStoredUpdateCheck(
+				stored,
+				installedVersion,
+				Date.now(),
+			);
+			if (cached) {
+				storeRelease = cached;
+				renderUpdateNotice();
+			}
+			if (!due) return;
+			writeStoredUpdateCheck({
+				...(stored && typeof stored === "object" ? stored : {}),
+				attemptedAt: Date.now(),
+			});
+			const extensionApi = (globalThis as PlainObject).browser as
+				| PlainObject
+				| undefined;
+			const release = await _checkStoreRelease(
+				extensionApi?.runtime ?? chrome.runtime,
+			);
+			if (!release) return;
+			storeRelease = release;
+			renderUpdateNotice();
+			const checkedAt = Date.now();
+			writeStoredUpdateCheck({
+				...release,
+				installedVersion,
+				checkedAt,
+				attemptedAt: checkedAt,
+			});
+		} catch (error) {
+			console.warn("[TTV AB] Update check failed:", error);
+		}
 	}
 
 	function openChangelogPage() {
@@ -2950,6 +3172,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		prepareLogExport();
 		return;
 	}
+
+	void refreshStoreRelease();
 
 	langSelector.addEventListener("change", (e) => {
 		const nextSelector = e.currentTarget;
@@ -3877,11 +4101,17 @@ document.addEventListener("DOMContentLoaded", () => {
 			popupToggleController.write("autoplayBackup", false);
 		},
 	);
+	const updateModal = _createInfoModal(
+		updateBadge,
+		updateTooltip,
+		updateModalClose,
+	);
 	const infoModals = [
 		turboModeModal,
 		adTimerModal,
 		adSpoofingModal,
 		autoplayBackupModal,
+		updateModal,
 	];
 	autoplayBackupInfoIcon.addEventListener("click", () => {
 		isAutoplayBackupWarningContext = false;
