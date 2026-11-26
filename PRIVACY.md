@@ -1,6 +1,6 @@
 # Privacy Policy for TTV AB
 
-**Last Updated:** October 16, 2026
+**Last Updated:** November 26, 2026
 
 This Privacy Policy explains how TTV AB ("the Extension") handles data while you use Twitch.
 
@@ -30,6 +30,7 @@ The Extension uses browser-local extension storage and bounded entries in Twitch
 
 - The Ad Blocking enable/disable toggle, plus the Ad Spoofing, Low Quality Fallback, and Turbo Mode settings.
 - The selected language and popup theme.
+- The latest version found by the popup's update check and when it last ran.
 - Local UI data such as welcome/donation reminder dismissal timing and related presentation state.
 - The persistent "Ads Blocked" counter and recent daily totals of ad breaks, individual ads, Time Saved, and watch time.
 - Per-channel statistics, including channel login, first-seen, last-seen, and last-activity times, watch time, ad breaks and individual ads blocked, measured ad duration, and Time Saved.
@@ -51,6 +52,8 @@ Diagnostic logs are never uploaded automatically. After a log is saved, the Exte
 ## 5. External Links and Services
 
 The Extension does not include third-party analytics, tracking, advertising, or data-broker SDKs.
+
+When you open the popup, the Extension checks whether your browser's add-on store has a newer version, at most once an hour (and at most one attempt every 30 minutes if a check fails). It runs no background checks. In Chrome and other Chromium browsers it asks the browser to run its normal store update check. In Firefox it requests the Extension's public listing from addons.mozilla.org without cookies; Mozilla receives only what a browser sends with any web request, such as your IP address and browser version. The result and the time of the check are stored locally so the popup can show whether an update is available. No settings, statistics, or Twitch information are sent.
 
 The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These pages open only after a related user action. A new GitHub bug report opens when you choose to continue to GitHub from the Report a bug dialog. That link fills in the Extension version, browser name and version, and operating system so you can review them in the report form before submitting; nothing is sent until you submit the report on GitHub. The Extension does not append locally stored statistics, settings, or channel information to any link. Once an external page opens, that service's own privacy policy applies.
 

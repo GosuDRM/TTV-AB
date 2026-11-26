@@ -47,6 +47,13 @@ const TRANSLATIONS = {
 			"When off, normal-quality sources are tried first. If none is ad-free during a preroll or midroll, a low-quality stream can still play temporarily while higher quality is checked. Ad breaks can take a few seconds longer to show video.",
 		autoplayBackupGotIt: "Got it",
 		stable: "Stable",
+		updateAvailable: "Update available",
+		updateTitle: "Version {version} is available",
+		updateChromeDetails:
+			"Your browser is already downloading it and installs it on its own shortly. Refresh open Twitch tabs after it updates.",
+		updateFirefoxDetails:
+			"Firefox installs add-on updates on its own within a day. To update now, open Add-ons and themes, click the gear icon and choose Check for Updates.",
+		updateGotIt: "Got it",
 		changesInstantly: "Changes take effect instantly",
 		noDataYet: "No data yet",
 		allUnlocked: "All unlocked!",
@@ -176,6 +183,13 @@ const TRANSLATIONS = {
 			"Al desactivarlo, se prueban primero las fuentes de calidad normal. Si ninguna está libre de anuncios durante un preroll o midroll, puede reproducirse temporalmente una emisión de baja calidad mientras se comprueba una calidad superior. Las pausas publicitarias pueden tardar unos segundos más en mostrar vídeo.",
 		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
+		updateAvailable: "Actualización disponible",
+		updateTitle: "La versión {version} está disponible",
+		updateChromeDetails:
+			"Tu navegador ya la está descargando y la instalará por sí solo en breve. Recarga las pestañas abiertas de Twitch cuando se actualice.",
+		updateFirefoxDetails:
+			"Firefox instala las actualizaciones de complementos por sí solo en menos de un día. Para actualizar ahora, abre Complementos y temas, haz clic en el icono del engranaje y busca actualizaciones.",
+		updateGotIt: "Entendido",
 		changesInstantly: "Los cambios se aplican al instante",
 		noDataYet: "Aún no hay datos",
 		allUnlocked: "¡Todo desbloqueado!",
@@ -319,6 +333,13 @@ const TRANSLATIONS = {
 			"Désactivée, cette option privilégie les sources de qualité normale. Si aucune n’est sans publicité pendant un pré-roll ou un mid-roll, un flux de faible qualité peut être utilisé temporairement pendant la vérification d’une qualité supérieure. Les pauses publicitaires peuvent mettre quelques secondes de plus à afficher la vidéo.",
 		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
+		updateAvailable: "Mise à jour disponible",
+		updateTitle: "La version {version} est disponible",
+		updateChromeDetails:
+			"Votre navigateur la télécharge déjà et l'installera tout seul sous peu. Actualisez les onglets Twitch ouverts une fois la mise à jour faite.",
+		updateFirefoxDetails:
+			"Firefox installe tout seul les mises à jour des modules en moins d'un jour. Pour mettre à jour maintenant, ouvrez Modules complémentaires et thèmes, cliquez sur l'icône d'engrenage et recherchez les mises à jour.",
+		updateGotIt: "Compris",
 		changesInstantly: "Les changements s’appliquent instantanément",
 		noDataYet: "Pas encore de données",
 		allUnlocked: "Tout est débloqué !",
@@ -468,6 +489,13 @@ const TRANSLATIONS = {
 			"Wenn die Option aus ist, werden zuerst Quellen mit normaler Qualität geprüft. Ist bei einem Pre-Roll oder Mid-Roll keine davon werbefrei, kann vorübergehend ein Stream mit niedriger Qualität laufen, während höhere Qualität geprüft wird. Bei Werbepausen kann es dadurch einige Sekunden länger dauern, bis das Video erscheint.",
 		autoplayBackupGotIt: "Verstanden",
 		stable: "Stabil",
+		updateAvailable: "Update verfügbar",
+		updateTitle: "Version {version} ist verfügbar",
+		updateChromeDetails:
+			"Dein Browser lädt sie bereits herunter und installiert sie in Kürze selbst. Lade offene Twitch-Tabs nach dem Update neu.",
+		updateFirefoxDetails:
+			"Firefox installiert Add-on-Updates innerhalb eines Tages selbst. Um jetzt zu aktualisieren, öffne Add-ons und Themes, klicke auf das Zahnrad und suche nach Updates.",
+		updateGotIt: "Verstanden",
 		changesInstantly: "Änderungen werden sofort übernommen",
 		noDataYet: "Noch keine Daten",
 		allUnlocked: "Alles freigeschaltet!",
@@ -626,6 +654,13 @@ const TRANSLATIONS = {
 			"Quando desativado, as fontes de qualidade normal são testadas primeiro. Se nenhuma estiver livre de anúncios durante um preroll ou midroll, um fluxo de baixa qualidade pode ser usado temporariamente enquanto uma qualidade superior é verificada. Os intervalos de anúncios podem levar alguns segundos a mais para mostrar o vídeo.",
 		autoplayBackupGotIt: "Entendi",
 		stable: "Estável",
+		updateAvailable: "Atualização disponível",
+		updateTitle: "A versão {version} está disponível",
+		updateChromeDetails:
+			"Seu navegador já está baixando e vai instalar sozinho em breve. Recarregue as abas abertas da Twitch depois da atualização.",
+		updateFirefoxDetails:
+			"O Firefox instala atualizações de extensões sozinho em até um dia. Para atualizar agora, abra Extensões e temas, clique no ícone de engrenagem e procure atualizações.",
+		updateGotIt: "Entendi",
 		changesInstantly: "As alterações entram em vigor imediatamente",
 		noDataYet: "Ainda não há dados",
 		allUnlocked: "Tudo desbloqueado!",
@@ -768,6 +803,13 @@ const TRANSLATIONS = {
 			"Quando è disattivata, vengono provate prima le fonti di qualità normale. Se nessuna è priva di annunci durante un preroll o un midroll, può essere riprodotto temporaneamente un flusso di bassa qualità mentre si verifica una qualità superiore. Le pause pubblicitarie possono impiegare qualche secondo in più a mostrare il video.",
 		autoplayBackupGotIt: "Capito",
 		stable: "Stabile",
+		updateAvailable: "Aggiornamento disponibile",
+		updateTitle: "La versione {version} è disponibile",
+		updateChromeDetails:
+			"Il browser la sta già scaricando e la installerà da solo a breve. Ricarica le schede di Twitch aperte dopo l'aggiornamento.",
+		updateFirefoxDetails:
+			"Firefox installa da solo gli aggiornamenti dei componenti aggiuntivi entro un giorno. Per aggiornare subito, apri Estensioni e temi, fai clic sull'icona a ingranaggio e cerca gli aggiornamenti.",
+		updateGotIt: "Capito",
 		changesInstantly: "Le modifiche hanno effetto immediato",
 		noDataYet: "Ancora nessun dato",
 		allUnlocked: "Tutto sbloccato!",
@@ -910,6 +952,13 @@ const TRANSLATIONS = {
 			"オフの場合は通常画質の配信を先に確認します。プリロールやミッドロールの広告中に広告のない配信が見つからなければ、高画質を確認する間、一時的に低画質の配信が再生されることがあります。広告中に映像が表示されるまで、数秒長くかかることがあります。",
 		autoplayBackupGotIt: "わかりました",
 		stable: "安定版",
+		updateAvailable: "アップデートあり",
+		updateTitle: "バージョン {version} が利用可能です",
+		updateChromeDetails:
+			"ブラウザーがすでにダウンロード中で、まもなく自動でインストールされます。更新後、開いている Twitch のタブを再読み込みしてください。",
+		updateFirefoxDetails:
+			"Firefox はアドオンの更新を 1 日以内に自動でインストールします。今すぐ更新するには、アドオンとテーマを開き、歯車アイコンから更新を確認してください。",
+		updateGotIt: "わかりました",
 		changesInstantly: "変更はすぐに反映されます",
 		noDataYet: "まだデータがありません",
 		allUnlocked: "すべて達成済み！",
@@ -1063,6 +1112,13 @@ const TRANSLATIONS = {
 			"끄면 일반 화질 소스를 먼저 확인합니다. 프리롤이나 미드롤 중에 광고 없는 소스를 찾지 못하면, 더 높은 화질을 확인하는 동안 저화질 스트림이 임시로 재생될 수 있습니다. 광고 시간에 영상이 표시되기까지 몇 초 더 걸릴 수 있습니다.",
 		autoplayBackupGotIt: "확인",
 		stable: "안정판",
+		updateAvailable: "업데이트 있음",
+		updateTitle: "버전 {version}을(를) 사용할 수 있습니다",
+		updateChromeDetails:
+			"브라우저가 이미 다운로드 중이며 곧 자동으로 설치합니다. 업데이트 후 열려 있는 Twitch 탭을 새로고침하세요.",
+		updateFirefoxDetails:
+			"Firefox는 하루 안에 부가 기능 업데이트를 자동으로 설치합니다. 지금 업데이트하려면 부가 기능 및 테마를 열고 톱니바퀴 아이콘을 눌러 업데이트를 확인하세요.",
+		updateGotIt: "확인",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
 		noDataYet: "아직 데이터가 없습니다",
 		allUnlocked: "모두 달성했습니다!",
@@ -1193,6 +1249,13 @@ const TRANSLATIONS = {
 			"关闭时会优先尝试正常画质的来源。如果片头广告或插播广告期间没有无广告来源，可能会临时播放低画质直播，同时检查更高画质。广告时段可能需要多等几秒才会显示视频。",
 		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
+		updateAvailable: "有可用更新",
+		updateTitle: "版本 {version} 已推出",
+		updateChromeDetails:
+			"浏览器已在下载，稍后会自动安装。更新后请刷新已打开的 Twitch 标签页。",
+		updateFirefoxDetails:
+			"Firefox 会在一天内自动安装附加组件更新。如需立即更新，请打开“扩展和主题”，点击齿轮图标并检查更新。",
+		updateGotIt: "知道了",
 		changesInstantly: "更改会立即生效",
 		noDataYet: "暂无数据",
 		allUnlocked: "已全部解锁！",
@@ -1311,6 +1374,13 @@ const TRANSLATIONS = {
 			"關閉時會優先嘗試正常畫質的來源。如果片頭廣告或插播廣告期間沒有無廣告來源，可能會暫時播放低畫質實況，同時檢查更高畫質。廣告時段可能需要多等幾秒才會顯示影片。",
 		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
+		updateAvailable: "有可用更新",
+		updateTitle: "版本 {version} 已推出",
+		updateChromeDetails:
+			"瀏覽器已在下載，稍後會自動安裝。更新後請重新整理已開啟的 Twitch 分頁。",
+		updateFirefoxDetails:
+			"Firefox 會在一天內自動安裝附加元件更新。若要立即更新，請開啟「擴充套件與佈景主題」，點擊齒輪圖示並檢查更新。",
+		updateGotIt: "知道了",
 		changesInstantly: "變更會立即生效",
 		noDataYet: "尚無資料",
 		allUnlocked: "已全部解鎖！",
@@ -1430,6 +1500,13 @@ const TRANSLATIONS = {
 			"При отключённой настройке сначала проверяются источники обычного качества. Если во время преролла или мидролла среди них нет потока без рекламы, временно может воспроизводиться поток низкого качества, пока проверяется более высокое. Во время рекламы видео может появляться на несколько секунд позже.",
 		autoplayBackupGotIt: "Понятно",
 		stable: "Стабильная",
+		updateAvailable: "Доступно обновление",
+		updateTitle: "Доступна версия {version}",
+		updateChromeDetails:
+			"Браузер уже загружает её и скоро установит сам. После обновления перезагрузите открытые вкладки Twitch.",
+		updateFirefoxDetails:
+			"Firefox сам устанавливает обновления дополнений в течение суток. Чтобы обновить сейчас, откройте «Дополнения и темы», нажмите на значок шестерёнки и проверьте наличие обновлений.",
+		updateGotIt: "Понятно",
 		changesInstantly: "Изменения применяются мгновенно",
 		noDataYet: "Пока нет данных",
 		allUnlocked: "Всё разблокировано!",
@@ -1586,6 +1663,13 @@ const TRANSLATIONS = {
 			"Коли налаштування вимкнено, спочатку перевіряються джерела звичайної якості. Якщо під час прероллу або мідроллу серед них немає потоку без реклами, тимчасово може відтворюватися потік низької якості, поки перевіряється вища. Під час реклами відео може з’являтися на кілька секунд пізніше.",
 		autoplayBackupGotIt: "Зрозуміло",
 		stable: "Стабільна",
+		updateAvailable: "Доступне оновлення",
+		updateTitle: "Доступна версія {version}",
+		updateChromeDetails:
+			"Браузер уже завантажує її і незабаром встановить сам. Після оновлення перезавантажте відкриті вкладки Twitch.",
+		updateFirefoxDetails:
+			"Firefox сам встановлює оновлення додатків протягом доби. Щоб оновити зараз, відкрийте «Додатки й теми», натисніть значок шестірні та перевірте наявність оновлень.",
+		updateGotIt: "Зрозуміло",
 		changesInstantly: "Зміни застосовуються миттєво",
 		noDataYet: "Ще немає даних",
 		allUnlocked: "Усе розблоковано!",
