@@ -1844,6 +1844,30 @@ function sanitizeLogContextMedia(value) {
 			Number.MAX_SAFE_INTEGER,
 			-1,
 		),
+		lastError: isPlainObject(value.lastError)
+			? {
+					code: Math.trunc(
+						sanitizeLogContextNumber(value.lastError.code, 1, 4, 0),
+					),
+					message: sanitizeLogContextString(value.lastError.message, 300),
+					at: sanitizeLogTimestamp(value.lastError.at),
+				}
+			: null,
+	};
+}
+
+function sanitizePlaybackServedDiagnostics(value) {
+	if (
+		!isPlainObject(value) ||
+		!["native", "backup", "hold"].includes(value.served)
+	)
+		return null;
+	return {
+		served: value.served,
+		source: sanitizeLogContextString(value.source, 48),
+		container: sanitizeLogContextString(value.container, 24),
+		catalog: sanitizeLogContextString(value.catalog, 160),
+		since: sanitizeLogTimestamp(value.since),
 	};
 }
 
@@ -1971,8 +1995,11 @@ function sanitizeLogContext(value) {
 		pinnedBackupMediaKey: normalizeMediaKey(context.pinnedBackupMediaKey),
 		workers,
 		media: sanitizeLogContextMedia(context.media),
+		serving: sanitizePlaybackServedDiagnostics(context.serving),
 	};
 }
+
+const diagnosticPageLoadId = createCounterFlushId().replace(/^flush:/, "load:");
 
 function forwardDiagnosticCheckpoint(detail) {
 	try {
@@ -1980,10 +2007,11 @@ function forwardDiagnosticCheckpoint(detail) {
 		const context = sanitizeLogContext(detail.context);
 		if (!context?.pageUrl) return false;
 		const sanitized = sanitizeLogEntries(
-			Array.isArray(detail.entries) ? detail.entries.slice(-64) : [],
+			Array.isArray(detail.entries) ? detail.entries.slice(-256) : [],
 		);
 		const checkpoint = {
 			capturedAt: Math.min(Date.now(), sanitizeLogTimestamp(detail.capturedAt)),
+			loadId: diagnosticPageLoadId,
 			context,
 			entries: sanitized.entries,
 			truncatedEntries: addTruncatedLogEntryCounts(

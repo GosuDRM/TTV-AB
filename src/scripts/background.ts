@@ -1046,11 +1046,28 @@ const DIAGNOSTIC_STORE_RESPONSE_TIMEOUT_MS = 2000;
 let diagnosticStoreWork = Promise.resolve();
 let pendingDiagnosticStoreWork = 0;
 
-type DiagnosticCheckpointRecord = {
+type DiagnosticCheckpointSnapshot = {
 	pageUrl: string;
 	capturedAt: number;
 	payload: string;
 };
+
+type DiagnosticCheckpointRecord = DiagnosticCheckpointSnapshot & {
+	loadId?: string;
+	previous?: DiagnosticCheckpointSnapshot;
+};
+
+function isRetainedDiagnosticSnapshot(value, now) {
+	return Boolean(
+		value &&
+			typeof value.pageUrl === "string" &&
+			typeof value.payload === "string" &&
+			value.payload.length <= 64 * 1024 &&
+			Number.isFinite(value.capturedAt) &&
+			value.capturedAt <= now &&
+			now - value.capturedAt <= DIAGNOSTIC_CHECKPOINT_TTL_MS,
+	);
+}
 
 function diagnosticPageUrl(value) {
 	try {
@@ -1102,16 +1119,12 @@ function queueDiagnosticStoreWork(
 			const now = Date.now();
 			for (const [key, value] of Object.entries(rawRecords || {}).slice(-16)) {
 				const record = value as DiagnosticCheckpointRecord;
-				if (
-					/^\d+$/.test(key) &&
-					record &&
-					typeof record.payload === "string" &&
-					record.payload.length <= 64 * 1024 &&
-					Number.isFinite(record.capturedAt) &&
-					record.capturedAt <= now &&
-					now - record.capturedAt <= DIAGNOSTIC_CHECKPOINT_TTL_MS
-				)
-					records[key] = record;
+				if (!/^\d+$/.test(key) || !isRetainedDiagnosticSnapshot(record, now))
+					continue;
+				const { previous, ...current } = record;
+				records[key] = isRetainedDiagnosticSnapshot(previous, now)
+					? record
+					: current;
 			}
 			const result = operation(records);
 			if (write && result !== false) {
@@ -1169,9 +1182,29 @@ function retainDiagnosticCheckpoint(detail, sender) {
 	const payload = JSON.stringify(detail);
 	if (new TextEncoder().encode(payload).byteLength > 64 * 1024)
 		return Promise.resolve(null);
+	const loadId =
+		typeof detail.loadId === "string" &&
+		/^load:[a-z0-9:_-]{8,120}$/i.test(detail.loadId)
+			? detail.loadId
+			: "";
 	return queueDiagnosticStoreWork((records) => {
-		if ((records[tabId]?.capturedAt || 0) > capturedAt) return false;
-		records[tabId] = { pageUrl, capturedAt, payload };
+		const existing = records[tabId];
+		if ((existing?.capturedAt || 0) > capturedAt) return false;
+		const previous =
+			existing?.loadId && loadId && existing.loadId !== loadId
+				? {
+						pageUrl: existing.pageUrl,
+						capturedAt: existing.capturedAt,
+						payload: existing.payload,
+					}
+				: existing?.previous;
+		records[tabId] = {
+			pageUrl,
+			capturedAt,
+			payload,
+			...(loadId ? { loadId } : {}),
+			...(previous ? { previous } : {}),
+		};
 		return true;
 	}, true);
 }
@@ -1232,8 +1265,11 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		const pageUrl = diagnosticPageUrl(detail?.pageUrl);
 		if (typeof tabId !== "number" || !Number.isInteger(tabId) || !pageUrl)
 			return undefined;
+		const wantsPrevious = detail?.previous === true;
 		void queueDiagnosticStoreWork((records) => {
 			const record = records[tabId];
+			if (wantsPrevious)
+				return record?.previous ? JSON.parse(record.previous.payload) : null;
 			return record?.pageUrl === pageUrl ? JSON.parse(record.payload) : null;
 		}).then((checkpoint) => {
 			sendResponse({ ok: Boolean(checkpoint), checkpoint });

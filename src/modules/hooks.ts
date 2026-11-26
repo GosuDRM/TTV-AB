@@ -1333,6 +1333,10 @@ function _hookWorkerFetch() {
 					decoderCodec: observedDecoderCodec,
 					handoffId: observedHandoffId,
 					requestStartedAt: Math.max(0, Number(requestOwner.startedAt) || 0),
+					serving:
+						typeof _getServedPlaylistReport === "function"
+							? _getServedPlaylistReport(context)
+							: null,
 				});
 				observedPlaybackMediaKeys.delete(observationKey);
 				observedPlaybackMediaKeys.set(observationKey, now);
@@ -6405,6 +6409,14 @@ function _hookWorker() {
 								this.__TTVABPlaybackPageContext = observedPageContext;
 							}
 							_promoteTrackedWorker(this);
+							if (
+								data.serving &&
+								typeof _recordPlaybackServedDiagnostic === "function"
+							)
+								_recordPlaybackServedDiagnostic({
+									...data.serving,
+									mediaKey: observedContext.MediaKey,
+								});
 							_rememberPageSidePlaybackOwner(
 								observedContext.MediaKey,
 								data.playlistUrl,

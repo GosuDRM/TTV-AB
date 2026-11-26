@@ -793,6 +793,10 @@ describe("cached evidence when live tab collection fails", () => {
 		);
 		expect(section.text).toContain("extension response timed out");
 		expect(section.text).toContain("Worker error before hang");
+		expect(section.text).toContain(
+			"(3 older log entries are not in this saved snapshot)",
+		);
+		expect(section.text).not.toContain("export size limit");
 		expect(section.text).toContain("Worker failures:");
 		expect(section.text).toContain("Post-ad recovery:");
 		expect(section.text).toContain('"phase":"exhausted"');
@@ -1062,6 +1066,76 @@ describe("popup log collection lifecycle", () => {
 
 		expect(output.length).toBeLessThanOrEqual(600);
 		expect(output).toContain("truncated");
+	});
+
+	it("shows what is being served and adds the tab's last snapshot from before its reload", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(2_000_000);
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.tabs.query = vi.fn((_query, callback) =>
+			callback([{ id: 1, url: "https://www.twitch.tv/first" }]),
+		);
+		chromeState.tabs.sendMessage = vi.fn(
+			(_tabId, _message, _options, callback) =>
+				callback({
+					ok: true,
+					entries: [{ t: 1_999_000, l: "info", m: "current page entry" }],
+					context: {
+						pageUrl: "https://www.twitch.tv/first",
+						serving: {
+							served: "hold",
+							source: "hold",
+							container: "fragmented MP4",
+							catalog: "AVC only: 1080p60, 360p30",
+							since: 1_990_000,
+						},
+					},
+					truncatedEntries: 0,
+				}),
+		);
+		const previousRequests: unknown[] = [];
+		chromeState.runtime.sendMessage = vi.fn((message, callback) => {
+			const detail = (message as { detail: Record<string, unknown> }).detail;
+			if (detail.previous !== true) {
+				callback({ ok: false });
+				return;
+			}
+			previousRequests.push(detail);
+			callback({
+				ok: true,
+				checkpoint: {
+					capturedAt: 1_950_000,
+					context: { pageUrl: "https://www.twitch.tv/first" },
+					entries: [{ t: 1_950_000, l: "error", m: "error before the reload" }],
+					truncatedEntries: 40,
+				},
+			});
+		});
+		try {
+			const output = await T<() => Promise<string>>("_buildLogExport")();
+			expect(previousRequests).toEqual([
+				{ tabId: 1, pageUrl: "https://www.twitch.tv/first", previous: true },
+			]);
+			expect(output).toContain(
+				"Serving: silent hold (no ad-free stream available) since 1970-01-01T00:33:10.000Z (fragmented MP4)",
+			);
+			expect(output).toContain("Stream qualities: AVC only: 1080p60, 360p30");
+			const current = output.indexOf(
+				"==== Tab 1: https://www.twitch.tv/first ====",
+			);
+			const before = output.indexOf(
+				"==== Tab 1 before its last reload: https://www.twitch.tv/first ====",
+			);
+			expect(current).toBeGreaterThan(-1);
+			expect(before).toBeGreaterThan(current);
+			expect(output.slice(before)).toContain("error before the reload");
+			expect(output.slice(before)).toContain(
+				"(40 older log entries are not in this saved snapshot)",
+			);
+			expect(output.slice(current, before)).toContain("current page entry");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("revokes the object URL immediately when download initiation fails", () => {

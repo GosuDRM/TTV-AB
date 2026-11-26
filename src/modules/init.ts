@@ -43,6 +43,8 @@ function _bootstrap() {
 
 const _PAGE_LOG_EXPORT_MAX_ENTRIES = 3000;
 const _PAGE_LOG_EXPORT_MAX_BYTES = 2 * 1024 * 1024;
+const _DIAGNOSTIC_CHECKPOINT_MAX_ENTRIES = 256;
+const _DIAGNOSTIC_CHECKPOINT_MAX_BYTES = 40 * 1024;
 const _PREVIEW_FAILURE_LOG_MAX_ENTRIES = 64;
 const _PAGE_LOG_TEXT_ENCODER =
 	typeof TextEncoder === "function" ? new TextEncoder() : null;
@@ -129,6 +131,66 @@ function _recordWorkerFailureDiagnostic(
 	} catch {}
 }
 
+const _PlaybackServedDiagnostics = new Map<
+	string,
+	{
+		served: string;
+		source: string;
+		container: string;
+		catalog: string;
+		since: number;
+	}
+>();
+
+function _getPageLogMediaKey(value) {
+	if (typeof value !== "string" || !value) return null;
+	return typeof _normalizeMediaKey === "function"
+		? _normalizeMediaKey(value)
+		: value.trim().toLowerCase().slice(0, 160);
+}
+
+function _getPageLogServedPlayback(state) {
+	try {
+		return (
+			_PlaybackServedDiagnostics.get(
+				_getPageLogMediaKey(state?.CurrentAdMediaKey || state?.PageMediaKey),
+			) || null
+		);
+	} catch {
+		return null;
+	}
+}
+
+function _recordPlaybackServedDiagnostic(data) {
+	try {
+		const mediaKey = _getPageLogMediaKey(data?.mediaKey);
+		const since = _getSafePageLogNumber(data?.since, 0);
+		if (
+			!mediaKey ||
+			!["native", "backup", "hold"].includes(data?.served) ||
+			since <= 0
+		)
+			return false;
+		const field = (value, maxLength) =>
+			_getSafePageLogString(value, maxLength).replace(/\n/g, " ");
+		_PlaybackServedDiagnostics.delete(mediaKey);
+		_PlaybackServedDiagnostics.set(mediaKey, {
+			served: data.served,
+			source: field(data.source, 48),
+			container: field(data.container, 24),
+			catalog: field(data.catalog, 160),
+			since,
+		});
+		while (_PlaybackServedDiagnostics.size > 8)
+			_PlaybackServedDiagnostics.delete(
+				_PlaybackServedDiagnostics.keys().next().value,
+			);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function _checkpointPageDiagnostics(force = false) {
 	try {
 		if (
@@ -157,7 +219,12 @@ function _checkpointPageDiagnostics(force = false) {
 		_lastDiagnosticCheckpointAt = now;
 		_lastDiagnosticCheckpointLogCount = logCount;
 		_lastDiagnosticCheckpointLogTail = logTail;
-		const collected = _collectPageLogEntries(64, 24 * 1024, false, true);
+		const collected = _collectPageLogEntries(
+			_DIAGNOSTIC_CHECKPOINT_MAX_ENTRIES,
+			_DIAGNOSTIC_CHECKPOINT_MAX_BYTES,
+			false,
+			true,
+		);
 		return _sendBridgeMessage("ttvab-diagnostic-checkpoint", {
 			capturedAt: now,
 			entries: collected.entries,
@@ -423,6 +490,23 @@ function _getSafePageLogUrl() {
 	}
 }
 
+function _getPageLogLastMediaError(mediaKey) {
+	try {
+		const last =
+			typeof _PrimaryMediaErrorState === "undefined"
+				? null
+				: _PrimaryMediaErrorState.last;
+		if (!last || last.mediaKey !== _getPageLogMediaKey(mediaKey)) return null;
+		return {
+			code: last.code,
+			message: _getSafePageLogString(last.message, 300).replace(/\n/g, " "),
+			at: last.at,
+		};
+	} catch {
+		return null;
+	}
+}
+
 function _collectPageLogMediaState(state) {
 	let media = null;
 	let activeMediaKey = null;
@@ -585,6 +669,7 @@ function _collectPageLogMediaState(state) {
 			),
 			buffered,
 			totalVideoFrames,
+			lastError: _getPageLogLastMediaError(activeMediaKey),
 		};
 	} catch {
 		return null;
@@ -696,6 +781,7 @@ function _collectPageLogContext() {
 				) || null,
 			workers,
 			media: _collectPageLogMediaState(state),
+			serving: _getPageLogServedPlayback(state),
 		};
 	} catch {
 		return null;

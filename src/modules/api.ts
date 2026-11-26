@@ -348,10 +348,11 @@ async function _getToken(
 
 		try {
 			attemptsMade++;
-			_log(
-				`[Trace] Requesting token for ${playerType} (${logTarget})${omitViewerHeaders ? " without viewer headers" : ""}${attempt > 0 ? ` retry ${attempt}` : ""}`,
-				omitViewerHeaders || attempt > 0 ? "info" : "debug",
-			);
+			if (omitViewerHeaders || attempt > 0)
+				_log(
+					`[Trace] Requesting token for ${playerType} (${logTarget})${omitViewerHeaders ? " without viewer headers" : ""}${attempt > 0 ? ` retry ${attempt}` : ""}`,
+					"info",
+				);
 			const acceptLanguage =
 				navigator?.languages?.join(",") || navigator?.language || "en-US";
 
@@ -406,10 +407,8 @@ async function _getToken(
 				);
 			}
 
-			_log(
-				`[Trace] Token response: ${res.status}`,
-				res.status === 200 ? "debug" : "warning",
-			);
+			if (res.status !== 200)
+				_log(`[Trace] Token response: ${res.status}`, "warning");
 			return res;
 		} catch (e) {
 			if (requestSignal?.aborted) {

@@ -1559,6 +1559,47 @@ describe("diagnostic checkpoints outside Twitch tabs", () => {
 		expect((await read(2)).ok).toBe(false);
 	});
 
+	it("keeps the previous page load's last snapshot after the tab reloads", async () => {
+		const readPrevious = (tabId = 1) =>
+			send(
+				"ttvab-get-diagnostic-checkpoint",
+				{ tabId, pageUrl, previous: true },
+				{
+					id: "ttvab-test",
+					url: "moz-extension://ttvab-test/src/popup/popup.html",
+					tab: { id: 42 },
+				},
+			);
+		const load = (loadId: string, time: number, message: string) => ({
+			...checkpoint(time),
+			loadId,
+			entries: [{ t: time, l: "error", m: message }],
+		});
+		await retain(load("load:aaaaaaaaaaaa", 90000, "before reload 1"));
+		await retain(load("load:aaaaaaaaaaaa", 95000, "before reload 2"));
+		expect((await readPrevious()).ok).toBe(false);
+		await retain(load("load:bbbbbbbbbbbb", 99000, "after reload"));
+		expect((await read()).checkpoint).toMatchObject({
+			entries: [{ m: "after reload" }],
+		});
+		expect((await readPrevious()).checkpoint).toMatchObject({
+			entries: [{ m: "before reload 2" }],
+		});
+		await retain(load("load:bbbbbbbbbbbb", 100000, "after reload 2"));
+		expect((await readPrevious()).checkpoint).toMatchObject({
+			entries: [{ m: "before reload 2" }],
+		});
+		await retain(checkpoint(100000));
+		expect((await readPrevious()).checkpoint).toMatchObject({
+			entries: [{ m: "before reload 2" }],
+		});
+		vi.advanceTimersByTime(30 * 60 * 1000 - 4000);
+		expect((await readPrevious()).ok).toBe(false);
+		expect((await read()).ok).toBe(true);
+		removed(1);
+		expect((await read()).ok).toBe(false);
+	});
+
 	it("clears the checkpoint when its tab closes", async () => {
 		await retain();
 		removed(1);

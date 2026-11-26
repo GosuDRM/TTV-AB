@@ -589,12 +589,17 @@ function _isWorkerEvent(
 				!Array.isArray(message.value)
 			);
 		case "PlaybackWorkerObserved":
-			return _hasWorkerMessageFields(message, {
-				playlistUrl: "string",
-				codec: "string",
-				decoderCodec: "string",
-				requestStartedAt: "number",
-			});
+			return (
+				_hasWorkerMessageFields(message, {
+					playlistUrl: "string",
+					codec: "string",
+					decoderCodec: "string",
+					requestStartedAt: "number",
+				}) &&
+				(message.serving == null ||
+					(typeof message.serving === "object" &&
+						!Array.isArray(message.serving)))
+			);
 		case "PlaybackWorkerBootstrapObserved":
 		case "MediaBootstrapRecoveryNeeded":
 		case "PauseResumePlayer":

@@ -58,6 +58,7 @@ const _PlaybackIntentState = {
 	observedPageGeneration: 0,
 	pauseListener: null,
 	playListener: null,
+	errorListener: null as (() => void) | null,
 	userPausedMediaKey: null,
 	userPausedAt: 0,
 	userPausedHadExplicitInteraction: false,
@@ -2580,12 +2581,36 @@ function _playPlaybackTarget(target, channel = null, mediaKey = null) {
 	try {
 		const playResult = target?.play?.();
 		if (typeof playResult?.catch === "function") {
-			playResult.catch(() => {});
+			playResult.catch((error) => _logRefusedPlay(target, error));
 		}
 		return true;
 	} catch {
 		return false;
 	}
+}
+
+const _RefusedPlayLogs = new WeakMap<object, Set<string>>();
+
+function _logRefusedPlay(target, error) {
+	try {
+		const name = String(error?.name || "Error").slice(0, 40);
+		if (name === "AbortError" || !target || typeof target !== "object") return;
+		let logged = _RefusedPlayLogs.get(target);
+		if (!logged) {
+			logged = new Set();
+			_RefusedPlayLogs.set(target, logged);
+		}
+		if (logged.has(name) || logged.size >= 4) return;
+		logged.add(name);
+		const message = String(error?.message || "")
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 200);
+		_log(
+			`[Recovery] The browser refused to play the video (${name}${message ? `: ${message}` : ""})`,
+			"warning",
+		);
+	} catch {}
 }
 
 function _isEditablePlaybackInteractionTarget(target) {
@@ -2796,13 +2821,88 @@ function _syncPrimaryMediaPlaybackIntent() {
 		_clearUserPauseIntent(null, __TTVAB_STATE__.PageMediaKey);
 	};
 
+	const handleError = () => {
+		if (isCurrent()) _recordPrimaryMediaError(media, mediaKey);
+	};
+
 	media.addEventListener("pause", handlePause, true);
 	media.addEventListener("play", handlePlay, true);
+	media.addEventListener("error", handleError, true);
 	_PlaybackIntentState.observedMedia = media;
 	_PlaybackIntentState.observedMediaKey = mediaKey;
 	_PlaybackIntentState.observedPageGeneration = pageGeneration;
 	_PlaybackIntentState.pauseListener = handlePause;
 	_PlaybackIntentState.playListener = handlePlay;
+	_PlaybackIntentState.errorListener = handleError;
+}
+
+const _MEDIA_ERROR_NAMES = [
+	"",
+	"playback aborted",
+	"network error",
+	"decode error",
+	"format not supported",
+];
+const _PrimaryMediaErrorState = {
+	last: null as {
+		mediaKey: string | null;
+		code: number;
+		message: string;
+		at: number;
+	} | null,
+	logged: new WeakMap<HTMLMediaElement, Set<string>>(),
+	logCount: 0,
+};
+
+function _getPrimaryMediaErrorMessage(media) {
+	let message = "";
+	for (const character of String(media?.error?.message || "")
+		.replace(/\s+/g, " ")
+		.slice(0, 600)) {
+		const code = character.charCodeAt(0);
+		if (code >= 32 && code !== 127) message += character;
+		if (message.length >= 300) break;
+	}
+	message = message.trim();
+	return typeof _redactLogText === "function"
+		? _redactLogText(message)
+		: message;
+}
+
+function _recordPrimaryMediaError(media, mediaKey) {
+	const code = Math.trunc(Number(media?.error?.code) || 0);
+	if (code < 1 || code > 4) return false;
+	const message = _getPrimaryMediaErrorMessage(media);
+	_PrimaryMediaErrorState.last = {
+		mediaKey: _normalizeMediaKey(mediaKey),
+		code,
+		message,
+		at: Date.now(),
+	};
+	let logged = _PrimaryMediaErrorState.logged.get(media);
+	if (!logged) {
+		logged = new Set();
+		_PrimaryMediaErrorState.logged.set(media, logged);
+	}
+	const key = `${code}|${message}`;
+	if (
+		logged.has(key) ||
+		logged.size >= 4 ||
+		_PrimaryMediaErrorState.logCount >= 20
+	)
+		return false;
+	logged.add(key);
+	_PrimaryMediaErrorState.logCount++;
+	const inAdBreak = Boolean(
+		mediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ===
+				_normalizeMediaKey(mediaKey),
+	);
+	_log(
+		`[Recovery] Video error ${code} (${_MEDIA_ERROR_NAMES[code]})${message ? `: ${message}` : ""}; ready ${media.readyState}, network ${media.networkState}, time ${(Number(media.currentTime) || 0).toFixed(1)}, ${inAdBreak ? "during an ad break" : "outside an ad break"}`,
+		"error",
+	);
+	return true;
 }
 
 function _clearObservedPlaybackIntentMedia() {
@@ -2821,6 +2921,13 @@ function _clearObservedPlaybackIntentMedia() {
 				true,
 			);
 		}
+		if (_PlaybackIntentState.errorListener) {
+			_PlaybackIntentState.observedMedia.removeEventListener(
+				"error",
+				_PlaybackIntentState.errorListener,
+				true,
+			);
+		}
 	}
 
 	_PlaybackIntentState.observedMedia = null;
@@ -2828,6 +2935,7 @@ function _clearObservedPlaybackIntentMedia() {
 	_PlaybackIntentState.observedPageGeneration = 0;
 	_PlaybackIntentState.pauseListener = null;
 	_PlaybackIntentState.playListener = null;
+	_PlaybackIntentState.errorListener = null;
 }
 
 function _monitorPlaybackIntent() {

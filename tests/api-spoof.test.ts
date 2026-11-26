@@ -1384,11 +1384,13 @@ describe("_getToken (exhausted-failure sentinel)", () => {
 		log.mockClear();
 		g._fetchViaWorkerBridge = async () => new Response("{}", { status: 200 });
 		await getToken("somechannel", "site", async () => new Response("{}"));
-		expect(log).toHaveBeenCalledWith(
-			"[Trace] Requesting token for site (somechannel)",
-			"debug",
-		);
-		expect(log).toHaveBeenCalledWith("[Trace] Token response: 200", "debug");
+		expect(
+			log.mock.calls.some(([message]) =>
+				/^\[Trace\] (?:Requesting token for site|Token response: 200)/.test(
+					String(message),
+				),
+			),
+		).toBe(false);
 		log.mockClear();
 		g._fetchViaWorkerBridge = async () => new Response("{}", { status: 403 });
 		await getToken(

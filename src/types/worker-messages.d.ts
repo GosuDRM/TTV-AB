@@ -172,6 +172,13 @@ type TTVABWorkerEventPayloads = {
 		codec?: string | null;
 		decoderCodec?: string | null;
 		requestStartedAt?: number;
+		serving?: {
+			served: "native" | "backup" | "hold";
+			source: string;
+			container: string;
+			catalog: string;
+			since: number;
+		} | null;
 	};
 	PlaybackWorkerBootstrapObserved: Record<never, never>;
 	MediaBootstrapRecoveryNeeded: Record<never, never>;

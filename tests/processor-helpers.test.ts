@@ -14135,6 +14135,15 @@ describe("client-side ad slot logging", () => {
 				expect(out).toContain(line);
 			expect(info.IsShowingAd).toBe(false);
 			expect(findBackup).not.toHaveBeenCalled();
+			expect(
+				T<(info: unknown) => Record<string, unknown> | null>(
+					"_getServedPlaylistReport",
+				)(info),
+			).toMatchObject({
+				served: "native",
+				source: "native",
+				container: "transport stream",
+			});
 		} finally {
 			Object.assign(state, previous);
 			restore();
@@ -14240,6 +14249,154 @@ describe("backup cooldown reset", () => {
 		});
 		expect(reset()(partial, 120_000)).toBe(false);
 		expect(reset()(coolingInfo(), 500_000)).toBe(false);
+		expect(logs).toEqual([]);
+	});
+});
+
+describe("served playlist summary for the log export", () => {
+	const record = () =>
+		T<(info: unknown, output: string, metadata?: unknown) => boolean>(
+			"_recordServedPlaylist",
+		);
+	const report = () =>
+		T<(info: unknown) => Record<string, unknown> | null>(
+			"_getServedPlaylistReport",
+		);
+	const catalogInfo = (overrides: Record<string, unknown> = {}) =>
+		makeInfo({
+			ResolutionList: [
+				{
+					Resolution: "1920x1080",
+					Codecs: "avc1.64002a,mp4a.40.2",
+					Name: "1080p60",
+				},
+				{
+					Resolution: "640x360",
+					Codecs: "avc1.4d401e,mp4a.40.2",
+					Name: "360p30",
+				},
+				{ Resolution: "0x0", Codecs: "mp4a.40.2", Name: "audio_only" },
+			],
+			...overrides,
+		});
+
+	it("records a change of served source once and describes the stream", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(500_000);
+		try {
+			const info = catalogInfo({ _LastServedPlaylistKind: "hold" });
+			const hold =
+				'#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:1.024,live\nseg.m4s';
+			expect(record()(info, hold)).toBe(true);
+			expect(report()(info)).toEqual({
+				served: "hold",
+				source: "hold",
+				container: "fragmented MP4",
+				catalog: "AVC only: 1080p60, 360p30",
+				since: 500_000,
+			});
+			vi.setSystemTime(501_000);
+			expect(record()(info, hold)).toBe(false);
+			expect(report()(info)?.since).toBe(500_000);
+			info._LastServedPlaylistKind = "backup";
+			expect(
+				record()(info, "#EXTM3U\n#EXTINF:2,live\nseg.ts", {
+					playerType: "site",
+					resolution: "1920x1080",
+				}),
+			).toBe(true);
+			expect(report()(info)).toMatchObject({
+				served: "backup",
+				source: "site 1920x1080",
+				container: "transport stream",
+				since: 501_000,
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("names mixed codec catalogs and ignores VOD media", () => {
+		const mixed = catalogInfo({
+			_LastServedPlaylistKind: "native",
+			ResolutionList: [
+				{
+					Resolution: "2560x1440",
+					Codecs: "hev1.1.6.L150.90,mp4a.40.2",
+					Name: "1440p60",
+				},
+				{
+					Resolution: "1920x1080",
+					Codecs: "avc1.64002a,mp4a.40.2",
+					Name: "1080p60",
+				},
+			],
+		});
+		expect(record()(mixed, "#EXTM3U\n#EXTINF:2,live\nseg.ts")).toBe(true);
+		expect(report()(mixed)?.catalog).toBe("HEVC + AVC: 1440p60, 1080p60");
+		const vod = catalogInfo({
+			MediaType: "vod",
+			MediaKey: "vod:1",
+			_LastServedPlaylistKind: "native",
+		});
+		expect(record()(vod, "#EXTM3U\n#EXTINF:2,\nseg.ts")).toBe(false);
+		expect(report()(vod)).toBeNull();
+	});
+});
+
+describe("failed playlist request logging", () => {
+	const logFailure = () =>
+		T<
+			(
+				info: unknown,
+				error: unknown,
+				signal: unknown,
+				startedAt: number,
+			) => void
+		>("_logFirstBreakRequestFailure");
+	const abort = (message = "Live handoff is behind the served end") =>
+		new DOMException(message, "AbortError");
+	let logs: string[];
+
+	beforeEach(() => {
+		logs = [];
+		g._log = (message: string) => logs.push(message);
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("logs the first failed request within a minute after the break once per break end", () => {
+		const info = makeInfo({ LastAdEndReloadAt: 990_000 });
+		logFailure()(info, abort(), { aborted: true }, 999_500);
+		logFailure()(info, abort(), { aborted: true }, 999_800);
+		expect(logs).toEqual([
+			"[Continuity] first playlist request after the break cancelled by the player 10.0s after it ended after 0.5s for live:testchannel",
+		]);
+		info.LastAdEndReloadAt = 995_000;
+		logFailure()(info, abort("boom"), null, 999_000);
+		expect(logs[1]).toBe(
+			"[Continuity] first playlist request after the break failed (boom) 5.0s after it ended after 1.0s for live:testchannel",
+		);
+	});
+
+	it("stays quiet long after the break and for ordinary failures", () => {
+		logFailure()(
+			makeInfo({ LastAdEndReloadAt: 900_000 }),
+			abort(),
+			{ aborted: true },
+			999_000,
+		);
+		logFailure()(
+			makeInfo({ LastAdEndReloadAt: 990_000 }),
+			new Error("network"),
+			null,
+			999_000,
+		);
+		logFailure()(makeInfo(), abort(), { aborted: true }, 999_000);
 		expect(logs).toEqual([]);
 	});
 });
