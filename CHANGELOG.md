@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [28.0.1] - 2026-11-26
+
+Added
+
+- **Update Notice** - The Stable label next to the version changes to Update available when your browser's add-on store has a newer version, and clicking it explains how to get it. The popup checks at most once an hour, and only while it is open.
+- **Debug Logs From Before a Refresh** - Include the last saved log details from before you refreshed a Twitch tab, so a problem that made you refresh can still be traced.
+- **Video Error Details** - Record in debug logs the video error the browser reports, such as error 4000, with its message, even after Twitch's player clears it.
+- **Current Stream Summary** - Show in debug logs whether each tab is playing Twitch's stream, an ad-free replacement, or the silent hold, along with the stream's format and qualities.
+- **Playback Diagnostics** - Record in debug logs when the browser refuses to start playback and when a stream request fails shortly after an ad break.
+
+Changed
+
+- **Longer Logs for Frozen Tabs** - Keep about four times as many log entries for a tab that stops responding, and say clearly when older entries were not saved.
+- **Shorter Debug Logs** - Record one line per search for an ad-free replacement stream instead of several lines for every stream checked, so logs reach further back.
+- **Exact Browser Version** - Show the browser's full version in debug logs and bug reports instead of the shortened one Chromium browsers report, and recognize Brave even when it presents itself as Chrome.
+
 ## [28.0.0] - 2026-11-26
 
 Fixed
