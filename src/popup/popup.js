@@ -122,7 +122,7 @@ function _formatLogEntryLine(entry) {
         .map((line, index) => `${prefix}${index === 0 ? " " : " | "}${line}`)
         .join("\n");
 }
-function _getLogExportBrowser(navigatorInfo = navigator) {
+function _getLogExportBrowser(navigatorInfo = navigator, fullVersionList = null) {
     try {
         const userAgent = _sanitizeLogExportText(navigatorInfo.userAgent, 1024);
         const browsers = [
@@ -140,6 +140,22 @@ function _getLogExportBrowser(navigatorInfo = navigator) {
         }
         const chromiumVersion = userAgent.match(/(?:Chrome|Chromium)\/([\d.]+)/)?.[1];
         const brands = navigatorInfo.userAgentData?.brands;
+        const fullVersions = Array.isArray(fullVersionList)
+            ? fullVersionList.slice(0, 16)
+            : [];
+        const getFullVersion = (name) => {
+            const version = fullVersions.find((entry) => entry?.brand === name)?.version;
+            return typeof version === "string" && /^\d+(?:\.\d+){1,5}$/.test(version)
+                ? version
+                : null;
+        };
+        if (typeof navigatorInfo.brave?.isBrave === "function") {
+            const version = getFullVersion("Brave") ??
+                getFullVersion("Chromium") ??
+                chromiumVersion;
+            if (version)
+                return `Brave ${version.slice(0, 64)}`;
+        }
         if (Array.isArray(brands)) {
             for (const name of [
                 "Microsoft Edge",
@@ -155,9 +171,10 @@ function _getLogExportBrowser(navigatorInfo = navigator) {
                     .find((entry) => entry?.brand === name);
                 if (!brand || !/^\d+(?:\.\d+){0,5}$/.test(brand.version))
                     continue;
-                const version = (name === "Google Chrome" || name === "Chromium") && chromiumVersion
-                    ? chromiumVersion
-                    : brand.version;
+                const version = getFullVersion(name) ??
+                    ((name === "Google Chrome" || name === "Chromium") && chromiumVersion
+                        ? chromiumVersion
+                        : brand.version);
                 const label = name === "YaBrowser" ? "Yandex Browser" : name;
                 return `${label} ${version.slice(0, 64)}`;
             }
@@ -167,6 +184,13 @@ function _getLogExportBrowser(navigatorInfo = navigator) {
     }
     catch { }
     return "unknown";
+}
+async function _getLogExportBrowserWithFullVersion(navigatorInfo = navigator, timeoutMs = 1000) {
+    const userAgentData = navigatorInfo?.userAgentData;
+    if (typeof userAgentData?.getHighEntropyValues !== "function")
+        return _getLogExportBrowser(navigatorInfo);
+    const values = await _awaitLogExportValue(Promise.resolve().then(() => userAgentData.getHighEntropyValues?.(["fullVersionList"])), timeoutMs, null);
+    return _getLogExportBrowser(navigatorInfo, values?.fullVersionList);
 }
 function _awaitLogExportValue(promise, timeoutMs, fallback) {
     let timer = null;
@@ -733,7 +757,8 @@ function _buildTabLogSection(tab, index, result, maxCharacters, beforeReload = f
 async function _buildLogExport(isCancelled = () => false) {
     const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
     const exportedAt = new Date();
-    const [operatingSystem, decoderSupport, extensionSettings, siteAccess] = await Promise.all([
+    const [browser, operatingSystem, decoderSupport, extensionSettings, siteAccess,] = await Promise.all([
+        _getLogExportBrowserWithFullVersion(),
         _getLogExportOperatingSystem(),
         _getLogExportDecoderSupport(),
         _readLogExportExtensionSettings(),
@@ -744,7 +769,7 @@ async function _buildLogExport(isCancelled = () => false) {
     const headerLines = [
         "TTV AB debug log",
         `Version: ${manifestVersion}`,
-        `Browser: ${_getLogExportBrowser()}`,
+        `Browser: ${browser}`,
         `OS: ${operatingSystem}`,
         `Decoder support: ${decoderSupport}`,
         `Extension settings: ${extensionSettings}`,
@@ -1656,6 +1681,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     void _getLogExportOperatingSystem().then((os) => {
         issueEnvironment = { ...issueEnvironment, os };
+    });
+    void _getLogExportBrowserWithFullVersion().then((browser) => {
+        issueEnvironment = { ...issueEnvironment, browser };
     });
     function openIssuesPage() {
         const issuesUrl = _getBugReportUrl(reportBugLink.href, chrome.runtime.getManifest?.()?.version || "", issueEnvironment.browser, issueEnvironment.os);
